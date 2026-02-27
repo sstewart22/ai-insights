@@ -1,0 +1,287 @@
+<template>
+  <div>
+    <div>
+      <!-- Hero -->
+      <div class="hero">
+        <div class="hero-row">
+          <div class="hero-left">
+            <div class="hero-kicker">Testing</div>
+            <h1 class="hero-title">Manual Lab</h1>
+            <div class="hero-subtitle">
+              Upload audio to transcribe, or paste transcript text directly.
+              Then generate insights.
+            </div>
+          </div>
+
+          <div class="hero-right">
+            <span class="chip chip--primary">Manual</span>
+            <span class="chip chip--secondary">
+              Ready:
+              <strong style="margin-left: 6px">{{
+                canGenerate ? "Yes" : "No"
+              }}</strong>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <!-- Audio tile -->
+        <div class="tile tile--accent" @click="() => {}">
+          <div class="tile-head">
+            <div class="tile-icon">♫</div>
+            <div class="tile-text">
+              <div class="tile-title">Audio Transcription</div>
+              <div class="tile-desc">
+                Upload a call recording and transcribe
+              </div>
+            </div>
+            <div class="spacer"></div>
+          </div>
+
+          <div class="tile-body" @click.stop>
+            <div class="muted">
+              Supported formats depend on the source; WAV/MP3/M4A usually work.
+            </div>
+
+            <div class="actions-row" style="margin-top: 10px">
+              <input type="file" accept="audio/*" @change="onPick" />
+            </div>
+
+            <div v-if="file" class="hint" style="margin-top: 10px">
+              File: <strong>{{ file.name }}</strong> ({{
+                prettyBytes(file.size)
+              }})
+            </div>
+
+            <div class="actions-row" style="margin-top: 10px">
+              <button
+                class="btn btn--primary"
+                :disabled="!file || loadingTranscribe"
+                @click="transcribe"
+              >
+                {{ loadingTranscribe ? "Transcribing..." : "Transcribe Audio" }}
+              </button>
+
+              <button
+                class="btn btn--ghost"
+                :disabled="loadingTranscribe"
+                @click="clearFile"
+              >
+                Clear File
+              </button>
+            </div>
+
+            <div
+              v-if="errorTranscribe"
+              class="error-tile"
+              style="margin-top: 10px"
+            >
+              <div class="error-title">Transcription error</div>
+              <div class="error-text">{{ errorTranscribe }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Insights tile -->
+        <div class="tile" @click="() => {}">
+          <div class="tile-head">
+            <div class="tile-icon">🧠</div>
+            <div class="tile-text">
+              <div class="tile-title">Insights</div>
+              <div class="tile-desc">
+                Generate structured call insights from transcript
+              </div>
+            </div>
+            <div class="spacer"></div>
+          </div>
+
+          <div class="tile-body" @click.stop>
+            <div class="muted">
+              You can edit the transcript before generating insights (handy for
+              quick testing).
+            </div>
+
+            <div class="actions-row" style="margin-top: 10px">
+              <button
+                class="btn btn--primary"
+                :disabled="!canGenerate || loadingInsights"
+                @click="generateInsights"
+              >
+                {{ loadingInsights ? "Generating..." : "Generate Insights" }}
+              </button>
+
+              <button
+                class="btn btn--ghost"
+                :disabled="loadingInsights"
+                @click="clearTranscript"
+              >
+                Clear Transcript
+              </button>
+
+              <span class="chip" v-if="transcriptText.trim().length">
+                chars:
+                <strong style="margin-left: 6px">{{
+                  transcriptText.trim().length
+                }}</strong>
+              </span>
+            </div>
+
+            <div
+              v-if="errorInsights"
+              class="error-tile"
+              style="margin-top: 10px"
+            >
+              <div class="error-title">Insights error</div>
+              <div class="error-text">{{ errorInsights }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transcript editor + output -->
+      <div class="split">
+        <!-- Transcript -->
+        <div class="panel">
+          <div class="row-top" style="margin-bottom: 10px">
+            <div class="tile-title">Transcript (editable)</div>
+            <span class="chip chip--secondary">{{
+              canGenerate ? "ready" : "needs more text"
+            }}</span>
+          </div>
+
+          <textarea
+            v-model="transcriptText"
+            class="textarea"
+            placeholder="Paste transcript here, or transcribe an audio file above..."
+          />
+
+          <div class="hint" style="margin-top: 8px">
+            Tip: if you’re just testing the insight extractor, paste any example
+            transcript here.
+          </div>
+        </div>
+
+        <!-- Insights output -->
+        <div class="panel">
+          <div class="row-top" style="margin-bottom: 10px">
+            <div class="tile-title">Insights Output</div>
+            <span class="chip chip--primary" v-if="insightsPretty"
+              >generated</span
+            >
+            <span class="chip" v-else>empty</span>
+          </div>
+
+          <div v-if="insightsPretty" class="prompt-box">
+            <pre class="pre">{{ insightsPretty }}</pre>
+          </div>
+
+          <div v-else class="hint">Generate insights to see results here.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import axios from "axios";
+import { computed, ref } from "vue";
+
+const file = ref<File | null>(null);
+
+const loadingTranscribe = ref(false);
+const loadingInsights = ref(false);
+
+const transcriptText = ref("");
+const insightsPretty = ref("");
+
+const errorTranscribe = ref("");
+const errorInsights = ref("");
+
+const canGenerate = computed(() => transcriptText.value.trim().length >= 20);
+
+function onPick(e: Event) {
+  const input = e.target as HTMLInputElement;
+  file.value = input.files?.[0] ?? null;
+  errorTranscribe.value = "";
+}
+
+function clearFile() {
+  file.value = null;
+}
+
+function clearTranscript() {
+  transcriptText.value = "";
+  insightsPretty.value = "";
+  errorInsights.value = "";
+}
+
+function prettyBytes(n: number) {
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let x = n;
+  while (x >= 1024 && i < units.length - 1) {
+    x /= 1024;
+    i++;
+  }
+  return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+async function transcribe() {
+  if (!file.value) return;
+
+  loadingTranscribe.value = true;
+  errorTranscribe.value = "";
+  try {
+    const form = new FormData();
+    form.append("file", file.value);
+
+    const res = await axios.post("/uiapi/transcription/call", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+
+    transcriptText.value = res.data?.text ?? JSON.stringify(res.data, null, 2);
+  } catch (e: any) {
+    const msg =
+      e?.response?.data?.message ||
+      e?.response?.data?.error ||
+      e?.message ||
+      "Unknown error";
+    errorTranscribe.value = typeof msg === "string" ? msg : JSON.stringify(msg);
+  } finally {
+    loadingTranscribe.value = false;
+  }
+}
+
+async function generateInsights() {
+  if (!canGenerate.value) return;
+
+  loadingInsights.value = true;
+  errorInsights.value = "";
+  insightsPretty.value = "";
+
+  try {
+    const res = await axios.post("/uiapi/insights/call", {
+      transcript: transcriptText.value,
+    });
+    const raw = res.data?.json ?? res.data;
+
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      insightsPretty.value = JSON.stringify(parsed, null, 2);
+    } catch {
+      insightsPretty.value =
+        typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+    }
+  } catch (e: any) {
+    const msg =
+      e?.response?.data?.message ||
+      e?.response?.data?.error ||
+      e?.message ||
+      "Unknown error";
+    errorInsights.value = typeof msg === "string" ? msg : JSON.stringify(msg);
+  } finally {
+    loadingInsights.value = false;
+  }
+}
+</script>

@@ -1,0 +1,244 @@
+/* Page wrapper */
+.page {
+  width: 100%;
+}
+
+.page-inner {
+  width: 100%;
+  max-width: 1050px;
+  margin: 0 auto;
+  padding: 8px 6px 18px;
+}
+
+/* ================= HERO ================= */
+
+.hero {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--brand-soft), var(--surface-soft-2));
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.hero-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.hero-kicker {
+  font-size: 12px;
+  opacity: 0.8;
+  color: var(--ink);
+}
+
+.hero-title {
+  margin: 2px 0 0;
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.hero-subtitle {
+  margin-top: 6px;
+  max-width: 720px;
+  color: var(--muted);
+}
+
+/* ================= GRID ================= */
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .grid-full {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ================= TILE ================= */
+
+.tile {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 14px 14px 10px;
+  cursor: pointer;
+  transition: box-shadow 160ms ease, transform 160ms ease,
+    border-color 160ms ease;
+}
+
+.tile:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--brand) 28%, transparent);
+  box-shadow: 0 8px 22px var(--shadow-sm);
+}
+
+.tile--accent {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brand) 6%, transparent),
+    var(--surface)
+  );
+}
+
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tile-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  color: var(--brand);
+  font-weight: 900;
+}
+
+.tile-title {
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.tile-desc {
+  font-size: 12px;
+  margin-top: 2px;
+  opacity: 0.78;
+  color: var(--ink);
+}
+
+.tile-body {
+  padding-top: 10px;
+  cursor: default;
+}
+
+/* Chevron */
+.chev {
+  opacity: 0.7;
+  transition: transform 160ms ease;
+  font-size: 18px;
+  user-select: none;
+  color: var(--ink);
+}
+
+.chev.open {
+  transform: rotate(180deg);
+}
+
+/* ================= CHIPS ================= */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft-2);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.chip--primary {
+  border-color: color-mix(in srgb, var(--brand) 22%, transparent);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  color: var(--brand);
+}
+
+.chip--secondary {
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.chip--success {
+  border-color: color-mix(in srgb, var(--success) 25%, transparent);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.chip--warning {
+  border-color: color-mix(in srgb, var(--warning) 25%, transparent);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.chip--danger {
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ================= STATS ================= */
+
+.stats {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 900px) {
+  .stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.stat {
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--surface-soft);
+}
+
+.stat-label {
+  font-size: 12px;
+  opacity: 0.78;
+  color: var(--ink);
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 900;
+  margin-top: 6px;
+  color: var(--ink);
+}
+
+/* Two-column master-detail layout */
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@media (min-width: 900px) {
+  .split {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Scroll panel */
+.panel {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.panel--scroll {
+  max-height: 560px;
+  overflow: auto;
+}

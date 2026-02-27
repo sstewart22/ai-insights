@@ -1,0 +1,42 @@
+#app {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+html,
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #121a32;
+  background: #ffffff;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:root {
+  /* Brand palette (swap these to re-theme the whole app) */
+  --brand: #2b6cb0; /* primary (blue) */
+  --brand-hover: #245a93;
+  --brand-soft: rgba(43, 108, 176, 0.12);
+
+  --accent: #0f766e; /* secondary (teal) */
+  --accent-hover: #0b5f59;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+
+  --ink: #121a32; /* main text */
+  --muted: rgba(18, 26, 50, 0.78);
+
+  --border: rgba(18, 26, 50, 0.1);
+  --surface: #ffffff;
+  --surface-soft: rgba(18, 26, 50, 0.03);
+
+  --danger: #b91c1c;
+  --danger-soft: rgba(220, 38, 38, 0.06);
+}
