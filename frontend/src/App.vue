@@ -39,6 +39,14 @@
             >
               Batch Dashboard
             </button>
+
+            <button
+              class="tab"
+              :class="{ 'tab--active': tab === 'summary' }"
+              @click="tab = 'summary'"
+            >
+              Summary
+            </button>
           </div>
         </div>
       </div>
@@ -46,7 +54,8 @@
       <div class="app-content">
         <ManualLab v-if="tab === 'manual'" />
         <DbQueue v-else-if="tab === 'db'" />
-        <BatchDashboard v-else />
+        <BatchDashboard v-else-if="tab === 'batch'" />
+        <SummaryDashboard v-else />
       </div>
     </div>
   </div>
@@ -57,8 +66,9 @@ import { ref } from "vue";
 import ManualLab from "./components/ManualLab.vue";
 import DbQueue from "./components/DbQueue.vue";
 import BatchDashboard from "./components/BatchDashboard.vue";
+import SummaryDashboard from "./components/SummaryDashboard.vue";
 
 import logoUrl from "./assets/ai-icon.png";
 
-const tab = ref<"manual" | "db" | "batch">("manual");
+const tab = ref<"manual" | "db" | "batch" | "summary">("manual");
 </script>

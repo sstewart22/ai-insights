@@ -29,6 +29,21 @@ export class RecordingsController {
     );
   }
 
+  @Get('summary')
+  summary() {
+    return this.svc.summaryByStatus();
+  }
+
+  @Post('batch/transcribe')
+  batchTranscribe(@Query('limit') limit?: string) {
+    return this.svc.batchTranscribe(parseInt(limit ?? '10', 10));
+  }
+
+  @Post('batch/insights')
+  batchInsights(@Query('limit') limit?: string) {
+    return this.svc.batchInsights(parseInt(limit ?? '10', 10));
+  }
+
   @Post(':id/transcribe')
   transcribe(@Param('id') id: string) {
     return this.svc.transcribeRecordingById(id);
@@ -51,20 +66,5 @@ export class RecordingsController {
     const row = await this.svc.getInsight(id);
     if (!row) throw new NotFoundException('Insight not found');
     return row;
-  }
-
-  @Get('summary')
-  summary() {
-    return this.svc.summaryByStatus();
-  }
-
-  @Post('batch/transcribe')
-  batchTranscribe(@Query('limit') limit?: string) {
-    return this.svc.batchTranscribe(parseInt(limit ?? '10', 10));
-  }
-
-  @Post('batch/insights')
-  batchInsights(@Query('limit') limit?: string) {
-    return this.svc.batchInsights(parseInt(limit ?? '10', 10));
   }
 }

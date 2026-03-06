@@ -45,6 +45,30 @@
             </div>
 
             <div class="actions-row" style="margin-top: 10px">
+              <label class="label">Transcription Provider</label>
+              <select v-model="provider" class="select">
+                <option value="openai">OpenAI (upload file)</option>
+                <option value="deepgram">Deepgram (fetch by URL)</option>
+              </select>
+            </div>
+
+            <div
+              v-if="provider === 'deepgram'"
+              class="actions-row"
+              style="margin-top: 10px"
+            >
+              <input
+                v-model="recordingUrl"
+                class="input"
+                placeholder="https://.../recording.wav"
+              />
+            </div>
+
+            <div
+              class="actions-row"
+              style="margin-top: 10px"
+              v-if="provider === 'openai'"
+            >
               <input type="file" accept="audio/*" @change="onPick" />
             </div>
 
@@ -57,10 +81,10 @@
             <div class="actions-row" style="margin-top: 10px">
               <button
                 class="btn btn--primary"
-                :disabled="!file || loadingTranscribe"
+                :disabled="!canTranscribe || loadingTranscribe"
                 @click="transcribe"
               >
-                {{ loadingTranscribe ? "Transcribing..." : "Transcribe Audio" }}
+                {{ loadingTranscribe ? "Transcribing..." : "Transcribe" }}
               </button>
 
               <button
@@ -198,6 +222,14 @@ const insightsPretty = ref("");
 const errorTranscribe = ref("");
 const errorInsights = ref("");
 
+const provider = ref<"openai" | "deepgram">("openai");
+const recordingUrl = ref("");
+
+const canTranscribe = computed(() => {
+  if (provider.value === "openai") return !!file.value;
+  return recordingUrl.value.trim().length > 10;
+});
+
 const canGenerate = computed(() => transcriptText.value.trim().length >= 20);
 
 function onPick(e: Event) {
@@ -228,19 +260,40 @@ function prettyBytes(n: number) {
 }
 
 async function transcribe() {
-  if (!file.value) return;
-
   loadingTranscribe.value = true;
   errorTranscribe.value = "";
+
   try {
-    const form = new FormData();
-    form.append("file", file.value);
+    if (provider.value === "openai") {
+      if (!file.value) return;
 
-    const res = await axios.post("/uiapi/transcription/call", form, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+      const form = new FormData();
+      form.append("file", file.value);
 
-    transcriptText.value = res.data?.text ?? JSON.stringify(res.data, null, 2);
+      const res = await axios.post("/uiapi/transcription/call", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      transcriptText.value =
+        res.data?.text ?? JSON.stringify(res.data, null, 2);
+      return;
+    }
+
+    // deepgram
+    const url = recordingUrl.value.trim();
+    if (!url) return;
+
+    const res = await axios.post("/uiapi/transcription/call-url", { url });
+
+    // Prefer diarised turns if present; else fallback to plain text
+    if (Array.isArray(res.data?.turns) && res.data.turns.length) {
+      transcriptText.value = res.data.turns
+        .map((t: any) => `Speaker ${t.speaker}: ${t.text}`)
+        .join("\n");
+    } else {
+      transcriptText.value =
+        res.data?.text ?? JSON.stringify(res.data, null, 2);
+    }
   } catch (e: any) {
     const msg =
       e?.response?.data?.message ||

@@ -12,6 +12,9 @@ import { CallRecording } from '../db/entities/call-recording.entity';
 import { CallTranscript } from '../db/entities/call-transcript.entity';
 import { CallInsight } from '../db/entities/call-insight.entity';
 
+import { TranscriptionDeepgramService } from '../transcription/transcriptionDeepgram.service';
+import { InsightsService } from '../insights/insights.service';
+
 function sniffAudioExt(buf: Buffer): 'wav' | 'mp3' | 'mp4' | 'unknown' {
   // WAV: "RIFF....WAVE"
   if (buf.length >= 12) {
@@ -77,7 +80,17 @@ export class RecordingsService {
     private transcriptsRepo: Repository<CallTranscript>,
     @InjectRepository(CallInsight)
     private insightsRepo: Repository<CallInsight>,
+    private readonly deepgram: TranscriptionDeepgramService,
+    private readonly insights: InsightsService,
   ) {}
+
+  private formatDeepgramTurns(turns: Array<{ speaker: number; text: string }>) {
+    // Simple UI-friendly format: "Speaker 0: ...\nSpeaker 1: ..."
+    return turns
+      .map((t) => `Speaker ${t.speaker}: ${t.text}`.trim())
+      .filter(Boolean)
+      .join('\n');
+  }
 
   async list(opts: { status?: any; limit: number }) {
     const where = opts.status ? { status: opts.status } : {};
@@ -162,6 +175,8 @@ export class RecordingsService {
     });
     if (!rec) throw new NotFoundException('Recording not found');
 
+    const provider = (rec.provider || 'openai').toLowerCase();
+
     // mark in-progress
     await this.recordingsRepo.update(rec.id, {
       status: 'transcribing',
@@ -169,21 +184,43 @@ export class RecordingsService {
     });
 
     try {
-      const audio = await this.downloadAudio(rec.recordingUrl || '');
+      let text = '';
+      let model = '';
 
-      const file = await toFile(audio.buffer, audio.filename);
-      const transcript = await this.client.audio.transcriptions.create({
-        model: 'gpt-4o-transcribe',
-        //model: 'gpt-4o-transcribe',
-        file,
-      });
+      if (provider === 'deepgram') {
+        // ✅ No need to download bytes; Deepgram fetches the URL
+        const dg = await this.deepgram.transcribeUrl(rec.recordingUrl || '');
+
+        // Prefer diarised turns if available; fallback to plain text
+        if (Array.isArray(dg.turns) && dg.turns.length) {
+          text = this.formatDeepgramTurns(dg.turns);
+        } else {
+          text = dg.text ?? '';
+        }
+
+        model = 'deepgram:nova-2-phonecall';
+      } else if (provider === 'openai' || provider === 'manual') {
+        // ✅ Keep your existing OpenAI flow (download -> toFile -> transcribe)
+        const audio = await this.downloadAudio(rec.recordingUrl || '');
+        const file = await toFile(audio.buffer, audio.filename);
+
+        const transcript = await this.client.audio.transcriptions.create({
+          model: 'gpt-4o-transcribe',
+          file,
+        });
+
+        text = transcript.text ?? '';
+        model = 'openai:gpt-4o-transcribe';
+      } else {
+        throw new BadRequestException(`Unsupported provider: ${rec.provider}`);
+      }
 
       // upsert transcript (unique by recordingId)
       await this.transcriptsRepo.upsert(
         {
           recordingId: rec.id,
-          text: transcript.text ?? '',
-          model: 'gpt-4o-transcribe',
+          text,
+          model,
         },
         ['recordingId'],
       );
@@ -193,7 +230,7 @@ export class RecordingsService {
         lastError: null,
       });
 
-      return { recordingId: rec.id, text: transcript.text ?? '' };
+      return { recordingId: rec.id, provider, text };
     } catch (e: any) {
       await this.recordingsRepo.update(rec.id, {
         status: 'error',
@@ -216,42 +253,44 @@ export class RecordingsService {
       throw new BadRequestException('No transcript found for this recording');
 
     try {
-      const prompt = `
-You are an analytics engine that extracts structured call insights.
-Return ONLY valid JSON matching this schema exactly.
-
-Schema:
-{
-  "summary_short": string,
-  "summary_detailed": string,
-  "primary_intent": string,
-  "resolution_status": "resolved" | "unresolved" | "escalated" | "follow_up_required",
-  "sentiment_overall": number,
-  "action_items": Array<{ "description": string, "owner": "agent" | "customer" | "unknown", "due_date_if_mentioned": string | null }>,
-  "key_entities": Array<{ "type": string, "value": string }>,
-  "risk_flags": string[]
-}
-
-Rules:
-- sentiment_overall must be between -1 and 1.
-- If unsure, use "unknown" owner and empty arrays.
-- Do not include markdown. Do not include extra keys.
-
-Transcript:
-"""${transcript.text}"""
-`.trim();
-
-      const resp = await this.client.responses.create({
-        model: 'gpt-4o-mini',
-        input: prompt,
-        temperature: 0.1,
-      });
-
-      const jsonText = (resp.output_text ?? '').trim();
-      if (!jsonText) throw new Error('Empty insights response');
+      const { rawJsonText, parsed } = await this.insights.extractInsightsV2(
+        transcript.text,
+      );
 
       await this.insightsRepo.upsert(
-        { recordingId, json: jsonText, extractorVersion: 'v1' },
+        {
+          recordingId,
+          json: rawJsonText,
+          extractorVersion: 'v2',
+
+          summary_short: parsed.summary_short ?? null,
+          summary_detailed: parsed.summary_detailed ?? null,
+          primary_intent: parsed.primary_intent ?? null,
+          resolution_status: parsed.resolution_status ?? null,
+          sentiment_overall:
+            typeof parsed.sentiment_overall === 'number'
+              ? parsed.sentiment_overall
+              : null,
+
+          contact_disposition: parsed.contact_disposition ?? null,
+          conversation_type: parsed.conversation_type ?? null,
+          topics_json: JSON.stringify(parsed.topics ?? []),
+
+          interest_level: parsed.customer_signals?.interest_level ?? null,
+          objections_json: JSON.stringify(
+            parsed.customer_signals?.objections ?? [],
+          ),
+
+          dealer_contact_required:
+            parsed.dealer_related?.dealer_contact_required ?? null,
+          dealer_name_if_mentioned:
+            parsed.dealer_related?.dealer_name_if_mentioned ?? null,
+
+          risk_flags_json: JSON.stringify(parsed.risk_flags ?? []),
+          action_items_json: JSON.stringify(parsed.action_items ?? []),
+          agent_coaching_json: JSON.stringify(parsed.agent_coaching ?? {}),
+          data_quality_json: JSON.stringify(parsed.data_quality ?? {}),
+        } as any,
         ['recordingId'],
       );
 
@@ -260,7 +299,7 @@ Transcript:
         lastError: null,
       });
 
-      return { recordingId, json: jsonText };
+      return { recordingId, json: rawJsonText };
     } catch (e: any) {
       await this.recordingsRepo.update(recordingId, {
         status: 'error',

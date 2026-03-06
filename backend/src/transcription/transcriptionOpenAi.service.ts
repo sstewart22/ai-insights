@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 import { Readable } from 'stream';
 
 @Injectable()
-export class TranscriptionService {
+export class TranscriptionOpenAiService {
   private client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   async transcribeBuffer(file: Express.Multer.File) {

@@ -33,6 +33,11 @@
               <div class="tile-desc">Paste a downloadable URL</div>
             </div>
             <div class="spacer"></div>
+
+            <select v-model="newProvider" class="select">
+              <option value="deepgram">deepgram</option>
+              <option value="openai">openai</option>
+            </select>
           </div>
 
           <div class="tile-body" @click.stop>
@@ -121,7 +126,7 @@
                 r.id.slice(0, 8)
               }}</span>
             </div>
-
+            <span class="chip">{{ r.provider }}</span>
             <div class="url-text">{{ r.recordingUrl }}</div>
 
             <div v-if="r.lastError" class="small-danger">
@@ -147,6 +152,9 @@
             </div>
             <div class="kv">
               <span>Status</span><span>{{ selected.status }}</span>
+            </div>
+            <div class="kv">
+              <span>Provider</span><span>{{ selected.provider }}</span>
             </div>
             <div class="kv">
               <span>URL</span
@@ -235,6 +243,8 @@ const error = ref("");
 const transcriptText = ref("");
 const insightsPretty = ref("");
 
+const newProvider = ref<"deepgram" | "openai">("deepgram");
+
 async function loadRecordings() {
   loading.value = true;
   error.value = "";
@@ -269,7 +279,7 @@ async function createRecording() {
   try {
     await axios.post("/uiapi/recordings", {
       recordingUrl: newUrl.value.trim(),
-      provider: "manual",
+      provider: newProvider.value, // ✅ use the selector
     });
     newUrl.value = "";
     await loadRecordings();
@@ -280,7 +290,6 @@ async function createRecording() {
     creating.value = false;
   }
 }
-
 async function transcribeSelected() {
   if (!selected.value) return;
   busy.value = true;

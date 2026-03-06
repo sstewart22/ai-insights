@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TranscriptionController } from './transcription.controller';
-import { TranscriptionService } from './transcription.service';
+import { TranscriptionOpenAiService } from './transcriptionOpenAi.service';
+import { TranscriptionDeepgramService } from './transcriptionDeepgram.service';
 
 @Module({
   controllers: [TranscriptionController],
-  providers: [TranscriptionService],
+  providers: [TranscriptionOpenAiService, TranscriptionDeepgramService],
 })
 export class TranscriptionModule {}

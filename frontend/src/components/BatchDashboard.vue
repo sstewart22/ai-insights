@@ -94,7 +94,7 @@ async function runBatchTranscribe() {
     );
     lastRunPretty.value = JSON.stringify(res.data, null, 2);
     await loadSummary();
-    open.value = "lastRun";
+    open.value.lastRun = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message || e?.message || "Batch transcribe failed";
@@ -114,7 +114,7 @@ async function runBatchInsights() {
     );
     lastRunPretty.value = JSON.stringify(res.data, null, 2);
     await loadSummary();
-    open.value = "lastRun";
+    open.value.lastRun = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message || e?.message || "Batch insights failed";

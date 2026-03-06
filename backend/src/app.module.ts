@@ -10,6 +10,7 @@ import { RecordingsModule } from './recordings/recordings.module';
 import { CallRecording } from './db/entities/call-recording.entity';
 import { CallTranscript } from './db/entities/call-transcript.entity';
 import { CallInsight } from './db/entities/call-insight.entity';
+import { InsightSummary } from './db/entities/insight-summary.entity';
 
 @Module({
   imports: [
@@ -25,7 +26,12 @@ import { CallInsight } from './db/entities/call-insight.entity';
           username: cfg.get('DATABASE_USER'),
           password: cfg.get('DATABASE_PASSWORD'),
           database: cfg.get('DATABASE_NAME', 'ai_assist'),
-          entities: [CallRecording, CallTranscript, CallInsight],
+          entities: [
+            CallRecording,
+            CallTranscript,
+            CallInsight,
+            InsightSummary,
+          ],
           synchronize: false, // keep false; use migrations if you want
           logging: false,
           options: {
