@@ -6,11 +6,14 @@ import { envSchema } from './env.validation';
 import { TranscriptionModule } from './transcription/transcription.module';
 import { InsightsModule } from './insights/insights.module';
 import { RecordingsModule } from './recordings/recordings.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UserModule } from './modules/user/user.module';
 
 import { CallRecording } from './db/entities/call-recording.entity';
 import { CallTranscript } from './db/entities/call-transcript.entity';
 import { CallInsight } from './db/entities/call-insight.entity';
 import { InsightSummary } from './db/entities/insight-summary.entity';
+import { UserAccount } from './db/entities/user-account.entity';
 
 @Module({
   imports: [
@@ -31,8 +34,9 @@ import { InsightSummary } from './db/entities/insight-summary.entity';
             CallTranscript,
             CallInsight,
             InsightSummary,
+            UserAccount,
           ],
-          synchronize: false, // keep false; use migrations if you want
+          synchronize: false,
           logging: false,
           options: {
             encrypt: true,
@@ -46,6 +50,8 @@ import { InsightSummary } from './db/entities/insight-summary.entity';
       },
     }),
 
+    AuthModule,
+    UserModule,
     TranscriptionModule,
     InsightsModule,
     RecordingsModule,

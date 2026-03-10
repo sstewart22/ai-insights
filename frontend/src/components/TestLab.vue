@@ -6,7 +6,7 @@
         <div class="hero-row">
           <div class="hero-left">
             <div class="hero-kicker">Testing</div>
-            <h1 class="hero-title">Manual Lab</h1>
+            <h1 class="hero-title">Test Lab</h1>
             <div class="hero-subtitle">
               Upload audio to transcribe, or paste transcript text directly.
               Then generate insights.
@@ -14,7 +14,7 @@
           </div>
 
           <div class="hero-right">
-            <span class="chip chip--primary">Manual</span>
+            <span class="chip chip--primary">Testing</span>
             <span class="chip chip--secondary">
               Ready:
               <strong style="margin-left: 6px">{{
@@ -47,8 +47,12 @@
             <div class="actions-row" style="margin-top: 10px">
               <label class="label">Transcription Provider</label>
               <select v-model="provider" class="select">
-                <option value="openai">OpenAI (upload file)</option>
-                <option value="deepgram">Deepgram (fetch by URL)</option>
+                <option :value="TranscriptionProvider.OpenAI">
+                  OpenAI (upload file)
+                </option>
+                <option :value="TranscriptionProvider.Deepgram">
+                  Deepgram (fetch by URL)
+                </option>
               </select>
             </div>
 
@@ -124,6 +128,16 @@
             <div class="muted">
               You can edit the transcript before generating insights (handy for
               quick testing).
+            </div>
+
+            <div class="actions-row" style="margin-top: 10px">
+              <label class="label">Insights Provider</label>
+              <select v-model="insightsProvider" class="select">
+                <option :value="InsightsProvider.OpenAI">OpenAI</option>
+                <option :value="InsightsProvider.Anthropic">Anthropic</option>
+                <option :value="InsightsProvider.Grok">Grok</option>
+                <option :value="InsightsProvider.Gemini">Gemini</option>
+              </select>
             </div>
 
             <div class="actions-row" style="margin-top: 10px">
@@ -210,6 +224,8 @@
 <script setup lang="ts">
 import axios from "axios";
 import { computed, ref } from "vue";
+import { ApiPath, InsightsProvider, TranscriptionProvider } from "@/enums/api";
+import { toPrettyInsights } from "@/utils/insights-response";
 
 const file = ref<File | null>(null);
 
@@ -222,11 +238,12 @@ const insightsPretty = ref("");
 const errorTranscribe = ref("");
 const errorInsights = ref("");
 
-const provider = ref<"openai" | "deepgram">("openai");
+const provider = ref<TranscriptionProvider>(TranscriptionProvider.OpenAI);
+const insightsProvider = ref<InsightsProvider>(InsightsProvider.OpenAI);
 const recordingUrl = ref("");
 
 const canTranscribe = computed(() => {
-  if (provider.value === "openai") return !!file.value;
+  if (provider.value === TranscriptionProvider.OpenAI) return !!file.value;
   return recordingUrl.value.trim().length > 10;
 });
 
@@ -264,13 +281,13 @@ async function transcribe() {
   errorTranscribe.value = "";
 
   try {
-    if (provider.value === "openai") {
+    if (provider.value === TranscriptionProvider.OpenAI) {
       if (!file.value) return;
 
       const form = new FormData();
       form.append("file", file.value);
 
-      const res = await axios.post("/uiapi/transcription/call", form, {
+      const res = await axios.post(ApiPath.TranscriptionCall, form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -279,13 +296,11 @@ async function transcribe() {
       return;
     }
 
-    // deepgram
     const url = recordingUrl.value.trim();
     if (!url) return;
 
-    const res = await axios.post("/uiapi/transcription/call-url", { url });
+    const res = await axios.post(ApiPath.TranscriptionCallUrl, { url });
 
-    // Prefer diarised turns if present; else fallback to plain text
     if (Array.isArray(res.data?.turns) && res.data.turns.length) {
       transcriptText.value = res.data.turns
         .map((t: any) => `Speaker ${t.speaker}: ${t.text}`)
@@ -314,18 +329,12 @@ async function generateInsights() {
   insightsPretty.value = "";
 
   try {
-    const res = await axios.post("/uiapi/insights/call", {
+    const res = await axios.post(ApiPath.InsightsCall, {
       transcript: transcriptText.value,
+      provider: insightsProvider.value,
     });
-    const raw = res.data?.json ?? res.data;
 
-    try {
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      insightsPretty.value = JSON.stringify(parsed, null, 2);
-    } catch {
-      insightsPretty.value =
-        typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
-    }
+    insightsPretty.value = toPrettyInsights(res.data);
   } catch (e: any) {
     const msg =
       e?.response?.data?.message ||

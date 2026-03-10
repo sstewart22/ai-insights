@@ -1,16 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import OpenAI from 'openai';
 
 import { CallInsight } from '../db/entities/call-insight.entity';
 import { CallRecording } from '../db/entities/call-recording.entity';
 import { InsightSummary } from '../db/entities/insight-summary.entity';
 
+import { createProvider } from './providers/provider.factory';
+import { InsightsProviderName } from './types/insights-provider.type';
+import { buildNarrativeSummaryPrompt } from './prompt/build-narrative-summary-prompt';
+import {
+  parseNarrativeSummaryJson,
+  NarrativeSummary,
+} from './helpers/validate-narrative-json';
+
 @Injectable()
 export class InsightsSummaryService {
-  private client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
   constructor(
     @InjectRepository(CallInsight)
     private insightsRepo: Repository<CallInsight>,
@@ -21,7 +26,6 @@ export class InsightsSummaryService {
   ) {}
 
   async getMetricsSummary(from: Date, to: Date) {
-    // total + avg sentiment
     const totals = await this.insightsRepo
       .createQueryBuilder('ci')
       .innerJoin(CallRecording, 'cr', 'cr.id = ci.recordingId')
@@ -30,7 +34,6 @@ export class InsightsSummaryService {
       .where('cr.createdAt >= :from AND cr.createdAt < :to', { from, to })
       .getRawOne<{ total_calls: string; avg_sentiment: number | null }>();
 
-    // by resolution
     const byResolution = await this.insightsRepo
       .createQueryBuilder('ci')
       .innerJoin(CallRecording, 'cr', 'cr.id = ci.recordingId')
@@ -41,7 +44,6 @@ export class InsightsSummaryService {
       .orderBy('count', 'DESC')
       .getRawMany<{ resolution_status: string; count: string }>();
 
-    // top intents
     const topIntents = await this.insightsRepo
       .createQueryBuilder('ci')
       .innerJoin(CallRecording, 'cr', 'cr.id = ci.recordingId')
@@ -53,7 +55,6 @@ export class InsightsSummaryService {
       .limit(10)
       .getRawMany<{ primary_intent: string; count: string }>();
 
-    // examples: worst sentiment (handy for narrative context)
     const worstSentiment = await this.insightsRepo
       .createQueryBuilder('ci')
       .innerJoin(CallRecording, 'cr', 'cr.id = ci.recordingId')
@@ -70,7 +71,6 @@ export class InsightsSummaryService {
       .limit(5)
       .getRawMany();
 
-    // by contact disposition
     const byContact = await this.insightsRepo
       .createQueryBuilder('ci')
       .innerJoin(CallRecording, 'cr', 'cr.id = ci.recordingId')
@@ -84,7 +84,6 @@ export class InsightsSummaryService {
       .orderBy('count', 'DESC')
       .getRawMany<{ contact_disposition: string; count: string }>();
 
-    // by conversation type
     const byConversationType = await this.insightsRepo
       .createQueryBuilder('ci')
       .innerJoin(CallRecording, 'cr', 'cr.id = ci.recordingId')
@@ -182,13 +181,26 @@ export class InsightsSummaryService {
         best_sentiment: bestSentiment,
         dealer_followups: dealerFollowups,
       },
-      // risk_flags + action_items_by_owner are best done via OPENJSON raw SQL (next section)
     };
   }
 
-  async getNarrativeSummary(from: Date, to: Date, filterKey = 'all') {
+  async getNarrativeSummary(
+    from: Date,
+    to: Date,
+    filterKey = 'all',
+    provider?: InsightsProviderName,
+  ) {
+    const selectedProvider =
+      provider ??
+      (process.env.INSIGHTS_PROVIDER as InsightsProviderName | undefined) ??
+      'openai';
+
     const cached = await this.summariesRepo.findOne({
-      where: { fromUtc: from, toUtc: to, filterKey },
+      where: {
+        fromUtc: from,
+        toUtc: to,
+        filterKey: `${filterKey}__${selectedProvider}`,
+      },
       order: { createdAt: 'DESC' },
     });
 
@@ -198,7 +210,8 @@ export class InsightsSummaryService {
           from: cached.fromUtc.toISOString(),
           to: cached.toUtc.toISOString(),
         },
-        filterKey: cached.filterKey,
+        filterKey,
+        providerUsed: selectedProvider,
         narrative: cached.narrativeJson,
         metrics: cached.metricsJson ? JSON.parse(cached.metricsJson) : null,
         cached: true,
@@ -208,67 +221,71 @@ export class InsightsSummaryService {
     }
 
     const metrics = await this.getMetricsSummary(from, to);
+    const prompt = buildNarrativeSummaryPrompt(metrics);
 
-    const prompt = `
-You are writing an exec narrative for a contact-centre manager in UK automotive finance.
+    const llmProvider = createProvider(selectedProvider);
 
-You are given aggregated metrics for a time window plus example calls.
+    let firstPass = await llmProvider.extract(prompt);
+    let jsonText = firstPass.text;
 
-Return ONLY valid JSON with this schema:
-{
-  "headline": string,
-  "period_summary": string,
-  "what_stood_out": string[],
-  "operational_funnel": Array<{ "stage": string, "detail": string }>,
-  "top_drivers": Array<{ "driver": string, "evidence": string }>,
-  "risks_and_compliance": Array<{ "risk": string, "evidence": string, "suggested_action": string }>,
-  "recommended_actions": Array<{ "action": string, "priority": "high"|"medium"|"low", "owner": "ops"|"agent"|"product"|"engineering"|"unknown" }>,
-  "notes_on_data_quality": string[]
-}
+    let parsedNarrative: NarrativeSummary | null = null;
 
-Rules:
-- Use ONLY the provided data; do not invent numbers.
-- Be specific: call out connect rate issues, common conversation types, interest levels, and dealer follow-up volume if present.
-- Reference examples only using the fields provided (recordingId snippets / summaries).
-- Keep concise.
+    try {
+      parsedNarrative = parseNarrativeSummaryJson(jsonText);
+    } catch {
+      const retryPrompt = `
+Your previous response was invalid.
 
-DATA (JSON):
-${JSON.stringify(metrics, null, 2)}
+Return ONLY valid JSON matching this exact schema and nothing else.
+
+${prompt}
 `.trim();
 
-    const model = 'gpt-4o-mini';
-    const resp = await this.client.responses.create({
-      model,
-      input: prompt,
-      temperature: 0.1,
-    });
+      const retry = await llmProvider.extract(retryPrompt);
+      jsonText = retry.text;
+      parsedNarrative = parseNarrativeSummaryJson(jsonText);
+      firstPass = retry;
+    }
 
-    const jsonText = (resp.output_text ?? '').trim();
-    if (!jsonText) throw new Error('Empty narrative response');
+    if (!parsedNarrative) {
+      throw new BadRequestException('Failed to generate valid narrative JSON');
+    }
 
     await this.summariesRepo.upsert(
       {
         fromUtc: from,
         toUtc: to,
-        filterKey,
+        filterKey: `${filterKey}__${selectedProvider}`,
         metricsJson: JSON.stringify(metrics),
-        narrativeJson: jsonText,
-        model,
+        narrativeJson: JSON.stringify(parsedNarrative),
+        model: firstPass.model,
       },
       ['fromUtc', 'toUtc', 'filterKey'],
     );
 
-    // Optionally validate JSON here
     return {
       window: metrics.window,
-      narrative: jsonText,
+      filterKey,
+      providerUsed: firstPass.provider,
+      model: firstPass.model,
+      narrative: parsedNarrative,
       metrics,
+      cached: false,
     };
   }
 
-  async listNarratives(opts: { limit: number; filterKey: string }) {
+  async listNarratives(opts: {
+    limit: number;
+    filterKey: string;
+    provider?: InsightsProviderName;
+  }) {
+    const selectedProvider =
+      opts.provider ??
+      (process.env.INSIGHTS_PROVIDER as InsightsProviderName | undefined) ??
+      'openai';
+
     const rows = await this.summariesRepo.find({
-      where: { filterKey: opts.filterKey },
+      where: { filterKey: `${opts.filterKey}__${selectedProvider}` },
       order: { createdAt: 'DESC' },
       take: opts.limit,
     });
@@ -277,10 +294,11 @@ ${JSON.stringify(metrics, null, 2)}
       id: r.id,
       from: r.fromUtc.toISOString(),
       to: r.toUtc.toISOString(),
-      filterKey: r.filterKey,
+      filterKey: opts.filterKey,
+      providerUsed: selectedProvider,
       createdAt: r.createdAt.toISOString(),
       model: r.model,
-      narrative: r.narrativeJson,
+      narrative: r.narrativeJson ? JSON.parse(r.narrativeJson) : null,
       metrics: r.metricsJson ? JSON.parse(r.metricsJson) : null,
     }));
   }

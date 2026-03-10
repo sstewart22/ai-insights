@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import axios from "axios";
 import { computed, onMounted, ref } from "vue";
+import { InsightsProvider } from "@/enums/api";
+import { RecordingPath } from "@/enums/recording-paths";
 
 type SectionKey = "summary" | "actions" | "lastRun";
 
@@ -17,6 +19,7 @@ const toggle = (key: SectionKey) => {
 const isOpen = (key: SectionKey) => open.value[key];
 
 const limit = ref(10);
+const insightsProvider = ref<InsightsProvider>(InsightsProvider.OpenAI);
 
 const loadingSummary = ref(false);
 const summary = ref<{ total: number; byStatus: Record<string, number> } | null>(
@@ -74,7 +77,7 @@ async function loadSummary() {
   loadingSummary.value = true;
   error.value = "";
   try {
-    const res = await axios.get("/uiapi/recordings/summary");
+    const res = await axios.get(RecordingPath.summary);
     summary.value = res.data;
   } catch (e: any) {
     error.value =
@@ -88,10 +91,12 @@ async function runBatchTranscribe() {
   runningTranscribe.value = true;
   error.value = "";
   lastRunPretty.value = "";
+
   try {
-    const res = await axios.post(
-      `/uiapi/recordings/batch/transcribe?limit=${limit.value}`
-    );
+    const res = await axios.post(RecordingPath.batchTranscribe, null, {
+      params: { limit: limit.value },
+    });
+
     lastRunPretty.value = JSON.stringify(res.data, null, 2);
     await loadSummary();
     open.value.lastRun = true;
@@ -108,10 +113,14 @@ async function runBatchInsights() {
   runningInsights.value = true;
   error.value = "";
   lastRunPretty.value = "";
+
   try {
     const res = await axios.post(
-      `/uiapi/recordings/batch/insights?limit=${limit.value}`
+      RecordingPath.batchInsights,
+      { provider: insightsProvider.value },
+      { params: { limit: limit.value } }
     );
+
     lastRunPretty.value = JSON.stringify(res.data, null, 2);
     await loadSummary();
     open.value.lastRun = true;
@@ -242,6 +251,16 @@ onMounted(loadSummary);
                 <option :value="30">30</option>
                 <option :value="50">50</option>
                 <option :value="100">100</option>
+              </select>
+            </div>
+
+            <div class="actions-row">
+              <label class="label">Insights Provider</label>
+              <select v-model="insightsProvider" class="select">
+                <option :value="InsightsProvider.OpenAI">OpenAI</option>
+                <option :value="InsightsProvider.Anthropic">Anthropic</option>
+                <option :value="InsightsProvider.Grok">Grok</option>
+                <option :value="InsightsProvider.Gemini">Gemini</option>
               </select>
             </div>
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import axios from "axios";
 import { computed, onMounted, ref } from "vue";
+import { ApiPath, InsightsProvider } from "@/enums/api";
+import { toPrettyInsights } from "@/utils/insights-response";
 
 type SectionKey = "range" | "metrics" | "narrative" | "history" | "raw";
 
@@ -25,6 +27,8 @@ const metrics = ref<any>(null);
 const narrativePretty = ref("");
 const rawPretty = ref("");
 
+const narrativeProvider = ref<InsightsProvider>(InsightsProvider.OpenAI);
+
 function isoStartOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -38,7 +42,6 @@ function isoEndOfDayExclusive(d: Date) {
   return x.toISOString();
 }
 
-// Default window: last 7 days
 const now = new Date();
 const from = ref(
   isoStartOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000))
@@ -75,19 +78,16 @@ const dealerFollowups = computed(
 function badgeClass(status: string) {
   const s = (status || "").toLowerCase();
 
-  // recording pipeline statuses (existing)
   if (s === "insights_done") return "chip--success";
   if (s === "transcribed") return "chip--info";
   if (s === "pending_transcription") return "chip--warning";
   if (s === "error") return "chip--danger";
 
-  // resolution_status
   if (s === "resolved") return "chip--success";
   if (s === "unresolved") return "chip--warning";
   if (s === "escalated") return "chip--danger";
   if (s === "follow_up_required") return "chip--info";
 
-  // contact disposition
   if (s === "connected_correct_party") return "chip--success";
   if (s === "connected_wrong_party") return "chip--warning";
   if (s === "no_answer") return "chip--secondary";
@@ -96,7 +96,6 @@ function badgeClass(status: string) {
   if (s === "call_dropped") return "chip--warning";
   if (s === "invalid_number") return "chip--danger";
 
-  // interest levels
   if (s === "high") return "chip--success";
   if (s === "medium") return "chip--info";
   if (s === "low") return "chip--warning";
@@ -118,7 +117,7 @@ async function loadMetrics() {
   rawPretty.value = "";
 
   try {
-    const res = await axios.get("/uiapi/insights/summary", {
+    const res = await axios.get(ApiPath.InsightsSummary, {
       params: { from: from.value, to: to.value },
     });
 
@@ -140,22 +139,16 @@ async function generateNarrative() {
   narrativePretty.value = "";
 
   try {
-    const res = await axios.post("/uiapi/insights/summary/narrative", null, {
-      params: { from: from.value, to: to.value },
+    const res = await axios.post(ApiPath.InsightsSummaryNarrative, null, {
+      params: {
+        from: from.value,
+        to: to.value,
+        provider: narrativeProvider.value,
+      },
     });
 
-    // backend returns { narrative: jsonText, metrics, window } per our earlier shape
-    const raw = res.data?.narrative ?? res.data;
+    narrativePretty.value = toPrettyInsights(res.data?.narrative ?? res.data);
 
-    try {
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      narrativePretty.value = JSON.stringify(parsed, null, 2);
-    } catch {
-      narrativePretty.value =
-        typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
-    }
-
-    // if backend returns metrics too, refresh local
     if (res.data?.metrics) {
       metrics.value = res.data.metrics;
       rawPretty.value = JSON.stringify(res.data.metrics, null, 2);
@@ -188,14 +181,29 @@ const selectedHistory = computed(() => {
 async function loadHistory() {
   loadingHistory.value = true;
   error.value = "";
+
   try {
-    const res = await axios.get("/uiapi/insights/summary/narratives", {
-      params: { limit: historyLimit.value, filterKey: "all" },
+    const res = await axios.get(ApiPath.InsightsSummaryNarratives, {
+      params: {
+        limit: historyLimit.value,
+        filterKey: "all",
+        provider: narrativeProvider.value,
+      },
     });
+
     history.value = Array.isArray(res.data) ? res.data : [];
-    if (!selectedHistoryId.value && history.value.length) {
-      selectedHistoryId.value = history.value[0].id;
+
+    if (!history.value.length) {
+      selectedHistoryId.value = null;
+      return;
     }
+
+    const stillExists = history.value.some(
+      (h) => h.id === selectedHistoryId.value
+    );
+    selectedHistoryId.value = stillExists
+      ? selectedHistoryId.value
+      : history.value[0].id;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message ||
@@ -270,6 +278,14 @@ onMounted(async () => {
 
             <label class="label">To (ISO)</label>
             <input v-model="to" class="input" style="min-width: 340px" />
+
+            <label class="label">Narrative Provider</label>
+            <select v-model="narrativeProvider" class="select">
+              <option :value="InsightsProvider.OpenAI">OpenAI</option>
+              <option :value="InsightsProvider.Anthropic">Anthropic</option>
+              <option :value="InsightsProvider.Grok">Grok</option>
+              <option :value="InsightsProvider.Gemini">Gemini</option>
+            </select>
 
             <button
               class="btn btn--primary"
@@ -668,6 +684,7 @@ onMounted(async () => {
               >
                 <div class="row-top">
                   <span class="chip chip--secondary">{{ h.filterKey }}</span>
+                  <span class="chip">{{ h.providerUsed || "provider?" }}</span>
                   <span class="mono" style="opacity: 0.75">{{
                     String(h.id).slice(0, 8)
                   }}</span>
@@ -684,6 +701,9 @@ onMounted(async () => {
               <div v-if="selectedHistory">
                 <div class="row-top">
                   <div class="tile-title">Selected Narrative</div>
+                  <span class="chip">{{
+                    selectedHistory.providerUsed || "provider?"
+                  }}</span>
                   <span class="chip">{{
                     selectedHistory.model || "model?"
                   }}</span>

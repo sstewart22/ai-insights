@@ -8,9 +8,11 @@ import {
 } from '@nestjs/common';
 import { InsightsService } from './insights.service';
 import { InsightsSummaryService } from './insights-summary.service';
+import { normalizeProvider } from './helpers/provider.helper';
 
 class InsightsRequestDto {
   transcript!: string;
+  provider?: string;
 }
 
 @Controller('uiapi/insights')
@@ -27,14 +29,28 @@ export class InsightsController {
         'Please provide a transcript (at least ~20 characters).',
       );
     }
-    return this.svc.extractInsightsV2(body.transcript);
+
+    const provider = normalizeProvider(body.provider);
+
+    return this.svc.extractInsightsV2(body.transcript, provider);
   }
 
   @Get('summary')
   async summary(@Query('from') from?: string, @Query('to') to?: string) {
-    if (!from || !to)
+    if (!from || !to) {
       throw new BadRequestException('from and to are required (ISO date/time)');
-    return this.svcSummary.getMetricsSummary(new Date(from), new Date(to));
+    }
+
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      throw new BadRequestException(
+        'from and to must be valid ISO date/time values',
+      );
+    }
+
+    return this.svcSummary.getMetricsSummary(fromDate, toDate);
   }
 
   @Post('summary/narrative')
@@ -42,13 +58,28 @@ export class InsightsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('filterKey') filterKey?: string,
+    @Query('provider') providerRaw?: string,
   ) {
-    if (!from || !to)
+    if (!from || !to) {
       throw new BadRequestException('from and to are required (ISO date/time)');
+    }
+
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      throw new BadRequestException(
+        'from and to must be valid ISO date/time values',
+      );
+    }
+
+    const provider = normalizeProvider(providerRaw);
+
     return this.svcSummary.getNarrativeSummary(
-      new Date(from!),
-      new Date(to!),
+      fromDate,
+      toDate,
       filterKey ?? 'all',
+      provider,
     );
   }
 
@@ -56,10 +87,20 @@ export class InsightsController {
   async narratives(
     @Query('limit') limit?: string,
     @Query('filterKey') filterKey?: string,
+    @Query('provider') providerRaw?: string,
   ) {
+    const parsedLimit = parseInt(limit ?? '20', 10);
+
+    if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+      throw new BadRequestException('limit must be a positive integer');
+    }
+
+    const provider = normalizeProvider(providerRaw);
+
     return this.svcSummary.listNarratives({
-      limit: Math.min(parseInt(limit ?? '20', 10), 200),
+      limit: Math.min(parsedLimit, 200),
       filterKey: filterKey ?? 'all',
+      provider,
     });
   }
 }

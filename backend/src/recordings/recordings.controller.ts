@@ -6,8 +6,18 @@ import {
   Post,
   Query,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { RecordingsService } from './recordings.service';
+import { normalizeProvider } from '../insights/helpers/provider.helper';
+
+class RecordingInsightsDto {
+  provider?: string;
+}
+
+class BatchInsightsDto {
+  provider?: string;
+}
 
 @Controller('uiapi/recordings')
 export class RecordingsController {
@@ -15,9 +25,15 @@ export class RecordingsController {
 
   @Get()
   list(@Query('status') status?: string, @Query('limit') limit?: string) {
+    const parsedLimit = parseInt(limit ?? '50', 10);
+
+    if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+      throw new BadRequestException('limit must be a positive integer');
+    }
+
     return this.svc.list({
       status: status as any,
-      limit: limit ? parseInt(limit, 10) : 50,
+      limit: Math.min(parsedLimit, 200),
     });
   }
 
@@ -36,12 +52,29 @@ export class RecordingsController {
 
   @Post('batch/transcribe')
   batchTranscribe(@Query('limit') limit?: string) {
-    return this.svc.batchTranscribe(parseInt(limit ?? '10', 10));
+    const parsedLimit = parseInt(limit ?? '10', 10);
+
+    if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+      throw new BadRequestException('limit must be a positive integer');
+    }
+
+    return this.svc.batchTranscribe(Math.min(parsedLimit, 200));
   }
 
   @Post('batch/insights')
-  batchInsights(@Query('limit') limit?: string) {
-    return this.svc.batchInsights(parseInt(limit ?? '10', 10));
+  batchInsights(
+    @Query('limit') limit?: string,
+    @Body() body?: BatchInsightsDto,
+  ) {
+    const parsedLimit = parseInt(limit ?? '10', 10);
+
+    if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+      throw new BadRequestException('limit must be a positive integer');
+    }
+
+    const provider = normalizeProvider(body?.provider);
+
+    return this.svc.batchInsights(Math.min(parsedLimit, 200), provider);
   }
 
   @Post(':id/transcribe')
@@ -50,8 +83,12 @@ export class RecordingsController {
   }
 
   @Post(':id/insights')
-  insights(@Param('id') id: string) {
-    return this.svc.generateInsightsById(id);
+  async generateInsights(
+    @Param('id') id: string,
+    @Body() body: RecordingInsightsDto,
+  ) {
+    const provider = normalizeProvider(body?.provider);
+    return this.svc.generateInsights(id, provider);
   }
 
   @Get(':id/transcript')

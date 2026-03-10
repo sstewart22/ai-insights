@@ -21,6 +21,12 @@ export class CallInsight {
   @Column({ type: 'uniqueidentifier' })
   recordingId!: string;
 
+  @Column({ type: 'nvarchar', length: 50, nullable: true })
+  providerUsed!: string | null;
+
+  @Column({ type: 'nvarchar', length: 120, nullable: true })
+  model!: string | null;
+
   // Always keep the full raw JSON from the LLM
   @Column({ type: 'nvarchar', length: 'MAX' })
   json!: string;
