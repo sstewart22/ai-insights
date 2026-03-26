@@ -3,7 +3,6 @@
     <div class="hero">
       <div class="hero-row">
         <div class="hero-left">
-          <div class="hero-kicker">Account & Administration</div>
           <h1 class="hero-title">Settings</h1>
           <div class="hero-subtitle">
             Manage your security settings and user administration.

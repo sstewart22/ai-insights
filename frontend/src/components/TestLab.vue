@@ -5,7 +5,6 @@
       <div class="hero">
         <div class="hero-row">
           <div class="hero-left">
-            <div class="hero-kicker">Testing</div>
             <h1 class="hero-title">Test Lab</h1>
             <div class="hero-subtitle">
               Upload audio to transcribe, or paste transcript text directly.

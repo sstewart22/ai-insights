@@ -21,78 +21,30 @@
 
   <div v-else class="app-shell">
     <div class="app-shell-inner">
-      <div class="app-header app-header--nav">
+      <div class="app-header">
         <div class="app-header-row">
           <div class="app-brand">
             <img class="app-logo" :src="logoUrl" alt="Auto Ignite" />
             <div>
               <h1 class="app-title">Omni-Sense</h1>
-              <div class="app-subtitle">
-                Prototype for transcription, insights extraction, and batch
-                processing.
-              </div>
+              <div class="app-subtitle">Transcription, insights extraction and batch processing.</div>
             </div>
           </div>
-
           <div class="app-topbar-right">
             <div class="app-user" v-if="user">
               <div class="app-user-name">{{ user.name || user.email }}</div>
-              <div class="app-user-email">{{ user.email }}</div>
             </div>
-
-            <button class="logout-button" @click="handleLogout">Logout</button>
+            <button class="logout-btn" @click="handleLogout">Sign out</button>
           </div>
         </div>
-
-        <div class="tabbar">
-          <button
-            class="tab"
-            :class="{ 'tab--active': tab === 'test' }"
-            @click="tab = 'test'"
-          >
-            Test Lab
-          </button>
-
-          <button
-            class="tab"
-            :class="{ 'tab--active': tab === 'data' }"
-            @click="tab = 'data'"
-          >
-            Data Queue
-          </button>
-
-          <button
-            class="tab"
-            :class="{ 'tab--active': tab === 'batch' }"
-            @click="tab = 'batch'"
-          >
-            Batch Dashboard
-          </button>
-
-          <button
-            class="tab"
-            :class="{ 'tab--active': tab === 'summary' }"
-            @click="tab = 'summary'"
-          >
-            Summary
-          </button>
-
-          <button
-            class="tab"
-            :class="{ 'tab--active': tab === 'narratives' }"
-            @click="tab = 'narratives'"
-          >
-            Narratives
-          </button>
-
-          <button
-            class="tab"
-            :class="{ 'tab--active': tab === 'settings' }"
-            @click="tab = 'settings'"
-          >
-            Settings
-          </button>
-        </div>
+        <nav class="tabbar">
+          <button class="tab" :class="{ 'tab--active': tab === 'test' }" @click="tab = 'test'">Test Lab</button>
+          <button class="tab" :class="{ 'tab--active': tab === 'data' }" @click="tab = 'data'">Data Queue</button>
+          <button class="tab" :class="{ 'tab--active': tab === 'batch' }" @click="tab = 'batch'">Batch Dashboard</button>
+          <button class="tab" :class="{ 'tab--active': tab === 'summary' }" @click="tab = 'summary'">Summary</button>
+          <button class="tab" :class="{ 'tab--active': tab === 'narratives' }" @click="tab = 'narratives'">Narratives</button>
+          <button class="tab" :class="{ 'tab--active': tab === 'settings' }" @click="tab = 'settings'">Settings</button>
+        </nav>
       </div>
 
       <div class="app-content">
@@ -196,16 +148,16 @@ function handleLogout() {
 .app-shell-inner {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 16px 20px 20px;
 }
 
 .app-header {
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  border-bottom: 0px;
+  border-radius: 18px 18px 0 0;
+  padding: 14px 20px 0;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
 }
 
 .app-header-row {
@@ -213,88 +165,101 @@ function handleLogout() {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  flex-wrap: wrap;
 }
 
 .app-brand {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
 .app-logo {
-  width: 52px;
-  height: 52px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
 }
 
 .app-title {
   margin: 0;
-  font-size: 1.8rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: #122033;
-}
-
-.app-subtitle {
-  color: #5b6b80;
-  margin-top: 4px;
 }
 
 .app-topbar-right {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
-.app-user {
-  text-align: right;
+.app-subtitle {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 2px;
 }
 
 .app-user-name {
-  font-size: 0.96rem;
-  font-weight: 700;
-  color: #1f2937;
-}
-
-.app-user-email {
   font-size: 0.88rem;
-  color: #667085;
+  font-weight: 600;
+  color: #4b5563;
 }
 
-.logout-button {
+.logout-btn {
   border: 1px solid #d0d7e2;
   border-radius: 12px;
-  padding: 10px 14px;
-  background: white;
+  padding: 8px 14px;
+  background: #fff;
   color: #243447;
+  font-size: 0.88rem;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.logout-btn:hover {
+  background: #f3f6fb;
+  border-color: #1f6feb;
 }
 
 .tabbar {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 18px;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .tab {
-  border: 1px solid #d0d7e2;
-  background: #fff;
-  color: #243447;
-  padding: 10px 14px;
-  border-radius: 12px;
-  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 8px 8px;
+  background: #f3f6fb;
+  color: #6b7280;
+  padding: 8px 16px;
+  font-size: 0.88rem;
   font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.tab:hover {
+  background: #fff;
+  color: #6b7280;
+  border-color: #d0d7e2;
 }
 
 .tab--active {
-  background: #1f6feb;
+  background: #1a3a5c;
   color: #fff;
-  border-color: #1f6feb;
+  border-color: #1a3a5c;
 }
 
 .app-content {
-  display: block;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-top: none;
+  border-radius: 0 0 18px 18px;
+  padding: 16px 20px 20px;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
 }
 </style>

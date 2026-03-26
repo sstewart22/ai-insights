@@ -41,37 +41,62 @@ export class InsightsSummaryService {
     private summariesRepo: Repository<InsightSummary>,
   ) {}
 
-  private applyInteractionFilter<T extends ObjectLiteral>(
+  private applyFilters<T extends ObjectLiteral>(
     qb: SelectQueryBuilder<T>,
     filterKey: string,
+    campaign?: string,
+    agent?: string,
   ): SelectQueryBuilder<T> {
     if (filterKey === 'calls') {
-      return qb.andWhere(
-        "(ia.interactionType IS NULL OR ia.interactionType = 'call')",
-      );
+      qb.andWhere("(ia.interactionType IS NULL OR ia.interactionType = 'call')");
+    } else if (filterKey === 'chats') {
+      qb.andWhere("ia.interactionType = 'chat'");
     }
-    if (filterKey === 'chats') {
-      return qb.andWhere("ia.interactionType = 'chat'");
+    if (campaign) {
+      qb.andWhere('ia.campaign = :campaign', { campaign });
+    }
+    if (agent) {
+      qb.andWhere('ia.agent = :agent', { agent });
     }
     return qb;
   }
 
-  /** Raw SQL filter snippet for direct manager.query() calls */
-  private rawFilterClause(filterKey: InteractionFilter): string {
+  /** Build raw SQL filter clause + extra params for direct manager.query() calls.
+   *  Params @0=from, @1=to are assumed to already be in the base query;
+   *  extra params are returned for appending to the params array. */
+  private buildRawFilters(
+    filterKey: InteractionFilter,
+    campaign?: string,
+    agent?: string,
+  ): { clause: string; extraParams: unknown[] } {
+    const parts: string[] = [];
+    const extraParams: unknown[] = [];
+
     if (filterKey === 'calls') {
-      return `AND (ia.interactionType IS NULL OR ia.interactionType = 'call')`;
+      parts.push(`(ia.interactionType IS NULL OR ia.interactionType = 'call')`);
+    } else if (filterKey === 'chats') {
+      parts.push(`ia.interactionType = 'chat'`);
     }
-    if (filterKey === 'chats') {
-      return `AND ia.interactionType = 'chat'`;
+
+    if (campaign) {
+      extraParams.push(campaign);
+      parts.push(`ia.campaign = @${1 + extraParams.length}`);
     }
-    return '';
+
+    if (agent) {
+      extraParams.push(agent);
+      parts.push(`ia.agent = @${1 + extraParams.length}`);
+    }
+
+    const clause = parts.length ? 'AND ' + parts.join(' AND ') : '';
+    return { clause, extraParams };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // GENERAL METRICS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async getMetricsSummary(from: Date, to: Date, filterKey: InteractionFilter = 'calls') {
+  async getMetricsSummary(from: Date, to: Date, filterKey: InteractionFilter = 'calls', campaign?: string, agent?: string) {
     const dateWhere = 'COALESCE(ia.interactionDateTime, ia.createdAt) >= :from AND COALESCE(ia.interactionDateTime, ia.createdAt) < :to';
     const dateParams = { from, to };
 
@@ -81,19 +106,19 @@ export class InsightsSummaryService {
         .innerJoin(Interaction, 'ia', 'ia.id = ii.recordingId')
         .where(dateWhere, dateParams);
 
-    const totals = await this.applyInteractionFilter(baseQb(), filterKey)
+    const totals = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select('COUNT(1)', 'total_calls')
       .addSelect('AVG(ii.sentiment_overall)', 'avg_sentiment')
       .getRawOne<{ total_calls: string; avg_sentiment: number | null }>();
 
-    const byCampaign = await this.applyInteractionFilter(baseQb(), filterKey)
+    const byCampaign = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select("COALESCE(ii.campaign_detected, 'unknown')", 'campaign_detected')
       .addSelect('COUNT(1)', 'count')
       .groupBy("COALESCE(ii.campaign_detected, 'unknown')")
       .orderBy('count', 'DESC')
       .getRawMany<{ campaign_detected: string; count: string }>();
 
-    const byScore = await this.applyInteractionFilter(baseQb(), filterKey)
+    const byScore = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select('AVG(ii.overall_score)', 'avg_score')
       .addSelect('MIN(ii.overall_score)', 'min_score')
       .addSelect('MAX(ii.overall_score)', 'max_score')
@@ -102,7 +127,7 @@ export class InsightsSummaryService {
 
     const connectedDispositionFilter = `ii.contact_disposition NOT IN ('no_answer', 'voicemail', 'busy', 'call_dropped', 'invalid_number')`;
 
-    const worstSentiment = await this.applyInteractionFilter(baseQb(), filterKey)
+    const worstSentiment = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select([
         'ii.recordingId AS recordingId',
         'ii.summary_short AS summary_short',
@@ -116,7 +141,7 @@ export class InsightsSummaryService {
       .limit(5)
       .getRawMany();
 
-    const byContact = await this.applyInteractionFilter(baseQb(), filterKey)
+    const byContact = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select(
         "COALESCE(ii.contact_disposition, 'unknown')",
         'contact_disposition',
@@ -126,21 +151,21 @@ export class InsightsSummaryService {
       .orderBy('count', 'DESC')
       .getRawMany<{ contact_disposition: string; count: string }>();
 
-    const byConversationType = await this.applyInteractionFilter(baseQb(), filterKey)
+    const byConversationType = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select("COALESCE(ii.conversation_type, 'unknown')", 'conversation_type')
       .addSelect('COUNT(1)', 'count')
       .groupBy("COALESCE(ii.conversation_type, 'unknown')")
       .orderBy('count', 'DESC')
       .getRawMany<{ conversation_type: string; count: string }>();
 
-    const byInterest = await this.applyInteractionFilter(baseQb(), filterKey)
+    const byInterest = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select("COALESCE(ii.interest_level, 'unknown')", 'interest_level')
       .addSelect('COUNT(1)', 'count')
       .groupBy("COALESCE(ii.interest_level, 'unknown')")
       .orderBy('count', 'DESC')
       .getRawMany<{ interest_level: string; count: string }>();
 
-    const leadGenerated = await this.applyInteractionFilter(baseQb(), filterKey)
+    const leadGenerated = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select(
         'SUM(CASE WHEN ii.lead_generated_for_dealer = 1 THEN 1 ELSE 0 END)',
         'count_true',
@@ -148,7 +173,7 @@ export class InsightsSummaryService {
       .addSelect('COUNT(1)', 'total')
       .getRawOne<{ count_true: string; total: string }>();
 
-    const bestSentiment = await this.applyInteractionFilter(baseQb(), filterKey)
+    const bestSentiment = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select([
         'ii.recordingId AS recordingId',
         'ii.summary_short AS summary_short',
@@ -162,7 +187,7 @@ export class InsightsSummaryService {
       .limit(5)
       .getRawMany();
 
-    const dealerFollowups = await this.applyInteractionFilter(baseQb(), filterKey)
+    const dealerFollowups = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select([
         'ii.recordingId AS recordingId',
         'ii.summary_short AS summary_short',
@@ -218,10 +243,10 @@ export class InsightsSummaryService {
   // OPERATIONS METRICS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async getOperationsMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls') {
+  async getOperationsMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls', campaign?: string, agent?: string) {
     const dateWhere = 'COALESCE(ia.interactionDateTime, ia.createdAt) >= :from AND COALESCE(ia.interactionDateTime, ia.createdAt) < :to';
     const dateParams = { from, to };
-    const filterClause = this.rawFilterClause(filterKey);
+    const { clause: filterClause, extraParams } = this.buildRawFilters(filterKey, campaign, agent);
 
     const baseQb = () =>
       this.insightsRepo
@@ -229,7 +254,7 @@ export class InsightsSummaryService {
         .innerJoin(Interaction, 'ia', 'ia.id = ii.recordingId')
         .where(dateWhere, dateParams);
 
-    const scoreStats = await this.applyInteractionFilter(baseQb(), filterKey)
+    const scoreStats = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select('AVG(ii.overall_score)', 'avg_score')
       .addSelect('MIN(ii.overall_score)', 'min_score')
       .addSelect('MAX(ii.overall_score)', 'max_score')
@@ -237,7 +262,7 @@ export class InsightsSummaryService {
       .addSelect('COUNT(1)', 'total_count')
       .getRawOne<{ avg_score: number | null; min_score: number | null; max_score: number | null; scored_count: string; total_count: string }>();
 
-    const scoreBuckets = await this.applyInteractionFilter(baseQb(), filterKey)
+    const scoreBuckets = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select(
         `CASE WHEN ii.overall_score < 5 THEN 'below_5' WHEN ii.overall_score < 7 THEN '5_to_7' WHEN ii.overall_score < 9 THEN '7_to_9' ELSE '9_plus' END`,
         'bucket',
@@ -268,7 +293,7 @@ export class InsightsSummaryService {
       WHERE ii.operations_scores_json IS NOT NULL
         AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0 AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
         ${filterClause}`,
-      [from, to],
+      [from, to, ...extraParams],
     );
 
     // Top coaching needs via OPENJSON — exclude meaningless filler values the LLM sometimes emits
@@ -288,10 +313,10 @@ export class InsightsSummaryService {
         AND LEN(LTRIM(RTRIM(j.value))) > 3
       GROUP BY j.value
       ORDER BY COUNT(*) DESC`,
-      [from, to],
+      [from, to, ...extraParams],
     );
 
-    const lowestScored = await this.applyInteractionFilter(baseQb(), filterKey)
+    const lowestScored = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select([
         'ii.recordingId AS recordingId',
         'ii.summary_short AS summary_short',
@@ -335,10 +360,10 @@ export class InsightsSummaryService {
   // CLIENT SERVICES METRICS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async getClientServicesMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls') {
+  async getClientServicesMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls', campaign?: string, agent?: string) {
     const dateWhere = 'COALESCE(ia.interactionDateTime, ia.createdAt) >= :from AND COALESCE(ia.interactionDateTime, ia.createdAt) < :to';
     const dateParams = { from, to };
-    const filterClause = this.rawFilterClause(filterKey);
+    const { clause: filterClause, extraParams } = this.buildRawFilters(filterKey, campaign, agent);
 
     const baseQb = () =>
       this.insightsRepo
@@ -346,7 +371,7 @@ export class InsightsSummaryService {
         .innerJoin(Interaction, 'ia', 'ia.id = ii.recordingId')
         .where(dateWhere, dateParams);
 
-    const scalars = await this.applyInteractionFilter(baseQb(), filterKey)
+    const scalars = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select('COUNT(1)', 'total')
       .addSelect('SUM(CASE WHEN ii.lead_generated_for_dealer = 1 THEN 1 ELSE 0 END)', 'leads')
       .addSelect('SUM(CASE WHEN ii.is_in_market_now = 1 THEN 1 ELSE 0 END)', 'in_market')
@@ -354,7 +379,7 @@ export class InsightsSummaryService {
       .addSelect('SUM(CASE WHEN ii.has_purchased_elsewhere = 1 THEN 1 ELSE 0 END)', 'purchased_elsewhere')
       .getRawOne<{ total: string; leads: string; in_market: string; lost_sales: string; purchased_elsewhere: string }>();
 
-    const topCompetitors = await this.applyInteractionFilter(baseQb(), filterKey)
+    const topCompetitors = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select("COALESCE(ii.competitor_purchased, 'unknown')", 'competitor')
       .addSelect('COUNT(1)', 'count')
       .andWhere('ii.has_purchased_elsewhere = 1')
@@ -388,10 +413,10 @@ export class InsightsSummaryService {
       ) ranked
       WHERE rn <= 3
       ORDER BY competitor, rn`,
-      [from, to],
+      [from, to, ...extraParams],
     );
 
-    const topDealers = await this.applyInteractionFilter(baseQb(), filterKey)
+    const topDealers = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select("COALESCE(ii.dealer_name, 'unknown')", 'dealer_name')
       .addSelect('COUNT(1)', 'count')
       .andWhere('ii.lead_generated_for_dealer = 1')
@@ -400,14 +425,14 @@ export class InsightsSummaryService {
       .limit(10)
       .getRawMany<{ dealer_name: string; count: string }>();
 
-    const byInterest = await this.applyInteractionFilter(baseQb(), filterKey)
+    const byInterest = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select("COALESCE(ii.interest_level, 'unknown')", 'interest_level')
       .addSelect('COUNT(1)', 'count')
       .groupBy("COALESCE(ii.interest_level, 'unknown')")
       .orderBy('count', 'DESC')
       .getRawMany<{ interest_level: string; count: string }>();
 
-    const recentLostSales = await this.applyInteractionFilter(baseQb(), filterKey)
+    const recentLostSales = await this.applyFilters(baseQb(), filterKey, campaign, agent)
       .select([
         'ii.recordingId AS recordingId',
         'ii.summary_short AS summary_short',
@@ -458,8 +483,8 @@ export class InsightsSummaryService {
   // OBJECTIONS METRICS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async getObjectionsMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls') {
-    const filterClause = this.rawFilterClause(filterKey);
+  async getObjectionsMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls', campaign?: string, agent?: string) {
+    const { clause: filterClause, extraParams } = this.buildRawFilters(filterKey, campaign, agent);
 
     // Fetch all raw objection strings with occurrence counts — normalisation happens in TS
     const rawObjections = await this.insightsRepo.manager.query<Array<{ objection: string; count: string }>>(
@@ -471,7 +496,7 @@ export class InsightsSummaryService {
         AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0 AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
         ${filterClause}
       GROUP BY j.value`,
-      [from, to],
+      [from, to, ...extraParams],
     );
 
     const summary = await this.insightsRepo.manager.query<Array<{ total: string; with_objections: string }>>(
@@ -482,7 +507,7 @@ export class InsightsSummaryService {
       INNER JOIN app.interactions ia ON ia.id = ii.recordingId
       WHERE COALESCE(ia.interactionDateTime, ia.createdAt) >= @0 AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
         ${filterClause}`,
-      [from, to],
+      [from, to, ...extraParams],
     );
 
     const s = summary[0] ?? { total: '0', with_objections: '0' };
@@ -506,8 +531,8 @@ export class InsightsSummaryService {
   // CAMPAIGN COMPLIANCE METRICS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async getCampaignComplianceMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls') {
-    const filterClause = this.rawFilterClause(filterKey);
+  async getCampaignComplianceMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls', campaign?: string, agent?: string) {
+    const { clause: filterClause, extraParams } = this.buildRawFilters(filterKey, campaign, agent);
 
     const stats = await this.insightsRepo.manager.query<Array<Record<string, string>>>(
       `SELECT
@@ -523,7 +548,7 @@ export class InsightsSummaryService {
       WHERE ii.campaign_compliance_json IS NOT NULL
         AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0 AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
         ${filterClause}`,
-      [from, to],
+      [from, to, ...extraParams],
     );
 
     const byCampaign = await this.insightsRepo.manager.query<Array<{ campaign: string; count: string }>>(
@@ -535,7 +560,7 @@ export class InsightsSummaryService {
         ${filterClause}
       GROUP BY COALESCE(ii.campaign_detected, 'unknown')
       ORDER BY COUNT(*) DESC`,
-      [from, to],
+      [from, to, ...extraParams],
     );
 
     const s = stats[0] ?? {};
@@ -569,13 +594,15 @@ export class InsightsSummaryService {
     filterKey: InteractionFilter = 'calls',
     provider?: InsightsProviderName,
     narrativeType: NarrativeType = 'generic',
+    campaign?: string,
+    agent?: string,
   ) {
     const selectedProvider =
       provider ??
       (process.env.INSIGHTS_PROVIDER as InsightsProviderName | undefined) ??
       'openai';
 
-    const storedKey = `${filterKey}__${selectedProvider}`;
+    const storedKey = [filterKey, selectedProvider, campaign ?? 'all', agent ?? 'all'].join('__');
 
     const cached = await this.summariesRepo.findOne({
       where: { fromUtc: from, toUtc: to, filterKey: storedKey, narrativeType },
@@ -604,19 +631,19 @@ export class InsightsSummaryService {
     let prompt: string;
 
     if (narrativeType === 'calls_operations') {
-      metrics = await this.getOperationsMetrics(from, to, filterKey);
+      metrics = await this.getOperationsMetrics(from, to, filterKey, campaign, agent);
       prompt = buildCallsOperationsNarrativePrompt(metrics);
     } else if (narrativeType === 'calls_client_services') {
-      metrics = await this.getClientServicesMetrics(from, to, filterKey);
+      metrics = await this.getClientServicesMetrics(from, to, filterKey, campaign, agent);
       prompt = buildCallsClientServicesNarrativePrompt(metrics);
     } else if (narrativeType === 'chats_operations') {
-      metrics = await this.getOperationsMetrics(from, to, filterKey);
+      metrics = await this.getOperationsMetrics(from, to, filterKey, campaign, agent);
       prompt = buildChatsOperationsNarrativePrompt(metrics);
     } else if (narrativeType === 'chats_client_services') {
-      metrics = await this.getClientServicesMetrics(from, to, filterKey);
+      metrics = await this.getClientServicesMetrics(from, to, filterKey, campaign, agent);
       prompt = buildChatsClientServicesNarrativePrompt(metrics);
     } else {
-      metrics = await this.getMetricsSummary(from, to, filterKey);
+      metrics = await this.getMetricsSummary(from, to, filterKey, campaign, agent);
       prompt = buildNarrativeSummaryPrompt(metrics);
     }
 
@@ -682,13 +709,15 @@ ${prompt}
     filterKey: InteractionFilter;
     provider?: InsightsProviderName;
     narrativeType?: NarrativeType;
+    campaign?: string;
+    agent?: string;
   }) {
     const selectedProvider =
       opts.provider ??
       (process.env.INSIGHTS_PROVIDER as InsightsProviderName | undefined) ??
       'openai';
 
-    const storedKey = `${opts.filterKey}__${selectedProvider}`;
+    const storedKey = [opts.filterKey, selectedProvider, opts.campaign ?? 'all', opts.agent ?? 'all'].join('__');
     const narrativeType = opts.narrativeType ?? 'generic';
 
     const rows = await this.summariesRepo.find({

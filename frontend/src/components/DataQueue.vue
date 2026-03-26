@@ -5,15 +5,8 @@
       <div class="hero">
         <div class="hero-row">
           <div class="hero-left">
-            <div class="hero-kicker">Calls, Transcripts and Insights</div>
             <h1 class="hero-title">Data Queue</h1>
-            <div class="hero-subtitle">
-              Add call recording URLs to the queue. Select a record, transcribe
-              (audio fetched by URL), then generate insights.
-            </div>
-          </div>
-          <div class="hero-right">
-            <span class="chip chip--primary">Queue</span>
+            <div class="hero-subtitle">Add call recording URLs, transcribe and generate insights.</div>
           </div>
         </div>
       </div>
@@ -39,6 +32,75 @@
             </button>
           </div>
         </div>
+
+        <!-- Filters tile -->
+        <div class="tile tile--accent" @click="() => {}">
+          <div class="tile-head">
+            <div class="tile-icon">⚙</div>
+            <div class="tile-text">
+              <div class="tile-title">Filters</div>
+              <div class="tile-desc">Search, filter and sort the queue</div>
+            </div>
+          </div>
+          <div class="tile-body" @click.stop>
+            <!-- Row 1: search + dates + clear -->
+            <div class="actions-row" style="flex-wrap: wrap; gap: 8px; margin-bottom: 8px">
+              <input
+                v-model="searchText"
+                class="input"
+                style="flex: 1 1 180px"
+                placeholder="Search id, url, provider, status…"
+              />
+              <div class="filter-group">
+                <label class="label">From</label>
+                <input v-model="dateFrom" type="datetime-local" class="input input--date" />
+              </div>
+              <div class="filter-group">
+                <label class="label">To</label>
+                <input v-model="dateTo" type="datetime-local" class="input input--date" />
+              </div>
+              <button class="btn btn--ghost btn--sm" style="margin-top: 18px" @click="clearDates">Clear dates</button>
+            </div>
+            <!-- Row 2: type / status / campaign / sort / limit / refresh -->
+            <div class="actions-row" style="flex-wrap: wrap; gap: 8px">
+              <select v-model="filterType" class="select" style="flex: 0 0 auto">
+                <option value="">All types</option>
+                <option value="call">Call</option>
+                <option value="chat">Chat</option>
+              </select>
+              <select v-model="status" class="select" style="flex: 0 0 auto">
+                <option value="">All statuses</option>
+                <option value="incomplete">incomplete</option>
+                <option value="pending_transcription">pending_transcription</option>
+                <option value="transcribing">transcribing</option>
+                <option value="transcribed">transcribed</option>
+                <option value="insights_done">insights_done</option>
+                <option value="error">error</option>
+              </select>
+              <input
+                v-model="filterCampaign"
+                class="input"
+                style="flex: 0 0 130px"
+                placeholder="Campaign…"
+              />
+              <div class="spacer"></div>
+              <select v-model="sortOrder" class="select" style="flex: 0 0 auto">
+                <option value="DESC">Newest first</option>
+                <option value="ASC">Oldest first</option>
+              </select>
+              <select v-model.number="resultLimit" class="select" style="flex: 0 0 auto">
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+                <option :value="250">250</option>
+                <option :value="500">500</option>
+                <option :value="1000">1000</option>
+              </select>
+              <button class="btn btn--ghost" :disabled="loading" @click="loadRecordings" style="flex: 0 0 auto">
+                {{ loading ? "Refreshing..." : "Refresh" }}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Split: list + details -->
@@ -51,73 +113,6 @@
             <span class="chip chip--secondary">
               Showing: <strong style="margin-left: 6px">{{ filteredRecordings.length }} / {{ recordings.length }}</strong>
             </span>
-          </div>
-
-          <!-- Filter row 1: search / type / status / campaign -->
-          <div class="actions-row" style="margin-bottom: 8px; flex-wrap: wrap; gap: 6px">
-            <input
-              v-model="searchText"
-              class="input"
-              style="flex: 1 1 160px"
-              placeholder="Search id, url, provider, status…"
-            />
-
-            <select v-model="filterType" class="select" style="flex: 0 0 auto">
-              <option value="">All types</option>
-              <option value="call">Call</option>
-              <option value="chat">Chat</option>
-            </select>
-
-            <select v-model="status" class="select" style="flex: 0 0 auto">
-              <option value="">All statuses</option>
-              <option value="incomplete">incomplete</option>
-              <option value="pending_transcription">pending_transcription</option>
-              <option value="transcribing">transcribing</option>
-              <option value="transcribed">transcribed</option>
-              <option value="insights_done">insights_done</option>
-              <option value="error">error</option>
-            </select>
-
-            <input
-              v-model="filterCampaign"
-              class="input"
-              style="flex: 0 0 120px"
-              placeholder="Campaign…"
-            />
-          </div>
-
-          <!-- Filter row 2: dates / limit / refresh -->
-          <div class="actions-row" style="margin-bottom: 10px; flex-wrap: wrap; gap: 6px">
-            <div style="display: flex; align-items: center; gap: 4px; flex: 0 0 auto">
-              <label class="label" style="margin: 0">From</label>
-              <input v-model="dateFrom" type="datetime-local" class="input" style="flex: 0 0 auto" />
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 4px; flex: 0 0 auto">
-              <label class="label" style="margin: 0">To</label>
-              <input v-model="dateTo" type="datetime-local" class="input" style="flex: 0 0 auto" />
-            </div>
-
-            <button class="btn btn--ghost btn--sm" style="flex: 0 0 auto" @click="clearDates">Clear</button>
-
-            <div class="spacer"></div>
-
-            <select v-model="sortOrder" class="select" style="flex: 0 0 auto">
-              <option value="DESC">Newest first</option>
-              <option value="ASC">Oldest first</option>
-            </select>
-
-            <select v-model.number="resultLimit" class="select" style="flex: 0 0 auto">
-              <option :value="50">50</option>
-              <option :value="100">100</option>
-              <option :value="250">250</option>
-              <option :value="500">500</option>
-              <option :value="1000">1000</option>
-            </select>
-
-            <button class="btn btn--ghost" :disabled="loading" @click="loadRecordings" style="flex: 0 0 auto">
-              {{ loading ? "Refreshing..." : "Refresh" }}
-            </button>
           </div>
 
           <div v-if="error" class="error-tile" style="margin-bottom: 10px">
@@ -133,20 +128,20 @@
             @click="select(r)"
           >
             <div class="row-top">
-              <span class="chip">{{ r.status }}</span>
+              <span :class="statusChip(r.status)">{{ r.status }}</span>
               <span v-if="r.interactionType" class="chip chip--secondary">{{ r.interactionType }}</span>
               <span v-if="r.campaign" class="chip chip--primary">{{ r.campaign }}</span>
               <span class="mono" style="opacity: 0.6; margin-left: auto; font-size: 11px">{{ r.id.slice(0, 8) }}</span>
             </div>
 
             <div class="row-top chip-row" style="margin-top: 6px; justify-content: flex-start">
-              <span class="chip chip--secondary">transcript: {{ r.provider || "unknown" }}</span>
-              <span class="chip chip--primary" v-if="r.insightProviderUsed">insights: {{ r.insightProviderUsed }}</span>
-              <span class="chip" v-else>insights: none</span>
+              <span :class="transcriptChip(r.provider)">transcript: {{ r.provider || "unknown" }}</span>
+              <span :class="insightChip(r.insightProviderUsed)" v-if="r.insightProviderUsed">insights: {{ r.insightProviderUsed }}</span>
+              <span class="chip chip--secondary" v-else>insights: none</span>
               <span class="mono" style="opacity: 0.5; font-size: 11px; margin-left: auto">{{ fmtDate(r.createdAt) }}</span>
             </div>
 
-            <div class="url-text">{{ r.recordingUrl }}</div>
+            <div class="url-text">{{ r.recordingUrl?.length > 256 ? r.recordingUrl.slice(0, 256) + '…' : r.recordingUrl }}</div>
 
             <div v-if="r.lastError" class="small-danger">
               Error: {{ r.lastError }}
@@ -168,18 +163,18 @@
               <div class="chip-row">
                 <span v-if="selected.interactionType" class="chip chip--secondary">{{ selected.interactionType }}</span>
                 <span v-if="selected.campaign" class="chip chip--primary">{{ selected.campaign }}</span>
-                <span class="chip chip--secondary">transcript: {{ selected.provider || "unknown" }}</span>
-                <span class="chip chip--primary" v-if="selectedInsightMeta?.providerUsed">
+                <span :class="statusChip(selected.status)">{{ selected.status }}</span>
+                <span :class="transcriptChip(selected.provider)">transcript: {{ selected.provider || "unknown" }}</span>
+                <span :class="insightChip(selectedInsightMeta?.providerUsed)" v-if="selectedInsightMeta?.providerUsed">
                   insights: {{ selectedInsightMeta.providerUsed }}
                 </span>
-                <span class="chip" v-else>insights: pending</span>
-                <span class="chip chip--secondary">{{ selected.status }}</span>
+                <span class="chip chip--secondary" v-else>insights: pending</span>
               </div>
             </div>
 
             <div class="kv">
               <span>URL</span>
-              <span class="mono">{{ selected.recordingUrl }}</span>
+              <span class="mono">{{ selected.recordingUrl?.length > 256 ? selected.recordingUrl.slice(0, 256) + '…' : selected.recordingUrl }}</span>
             </div>
 
             <div class="kv">
@@ -272,6 +267,33 @@ function fmtDate(d: string | null | undefined) {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+}
+
+function statusChip(status: string) {
+  const s = (status || "").toLowerCase();
+  if (s === "insights_done") return "chip chip--st-done";
+  if (s === "error") return "chip chip--danger";
+  if (s === "transcribed") return "chip chip--st-transcribed";
+  if (s === "transcribing") return "chip chip--st-transcribing";
+  if (s === "pending_transcription") return "chip chip--st-pending";
+  return "chip chip--st-incomplete";
+}
+
+function transcriptChip(provider: string | null | undefined) {
+  const p = (provider || "unknown").toLowerCase();
+  if (p === "deepgram") return "chip chip--tr-deepgram";
+  if (p === "openai") return "chip chip--tr-openai";
+  return "chip chip--secondary";
+}
+
+function insightChip(provider: string | null | undefined) {
+  if (!provider) return "chip chip--secondary";
+  const p = provider.toLowerCase();
+  if (p === "openai") return "chip chip--ins-openai";
+  if (p === "anthropic") return "chip chip--ins-anthropic";
+  if (p === "gemini") return "chip chip--ins-gemini";
+  if (p === "grok" || p === "xai") return "chip chip--ins-grok";
+  return "chip chip--secondary";
 }
 
 const newUrl = ref("");

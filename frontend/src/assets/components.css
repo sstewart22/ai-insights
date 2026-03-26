@@ -54,7 +54,7 @@
 
 /* Small separation below the app header */
 .app-content {
-  margin-top: 12px;
+  margin-top: 0px;
 }
 
 /* Tabs slightly more “nav-like” on the darker header */
@@ -586,4 +586,105 @@
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
   background: color-mix(in srgb, var(--ink) 2%, transparent);
+}
+
+/* KPI chips shown in closed panel headers */
+.kpi-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  pointer-events: none;
+}
+
+/* Compact date/filter row */
+.filters-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-group .label {
+  margin: 0;
+  font-size: 11px;
+}
+
+/* Compact date input */
+.input--date {
+  padding: 5px 8px;
+  font-size: 13px;
+  min-width: 130px;
+  max-width: 150px;
+}
+
+/* Compact select */
+.select--sm {
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+/* ── Status chips (stepped: gray → slate → blue → teal → green, red for error) ── */
+.chip--st-incomplete {
+  background: #e5e7eb;
+  color: #4b5563;
+  border-color: #d1d5db;
+}
+.chip--st-pending {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+.chip--st-transcribing {
+  background: #bfdbfe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+.chip--st-transcribed {
+  background: #99f6e4;
+  color: #0f766e;
+  border-color: #5eead4;
+}
+.chip--st-done {
+  background: #bbf7d0;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+/* ── Transcript provider chips (teal/indigo family) ── */
+.chip--tr-deepgram {
+  background: #e0e7ff;
+  color: #3730a3;
+  border-color: #c7d2fe;
+}
+.chip--tr-openai {
+  background: #ccfbf1;
+  color: #0f766e;
+  border-color: #99f6e4;
+}
+
+/* ── Insights provider chips (purple/amber family) ── */
+.chip--ins-openai {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #ddd6fe;
+}
+.chip--ins-anthropic {
+  background: #fed7aa;
+  color: #9a3412;
+  border-color: #fdba74;
+}
+.chip--ins-gemini {
+  background: #bfdbfe;
+  color: #1e40af;
+  border-color: #93c5fd;
+}
+.chip--ins-grok {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border-color: #e9d5ff;
 }

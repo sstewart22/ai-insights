@@ -12,18 +12,16 @@ type SectionKey =
   | "objections"
   | "compliance"
   | "narrative"
-  | "history"
   | "raw";
 
 const open = ref<Record<SectionKey, boolean>>({
   range: true,
-  metrics: true,
+  metrics: false,
   operations: false,
   client_services: false,
   objections: false,
   compliance: false,
   narrative: false,
-  history: false,
   raw: false,
 });
 
@@ -50,6 +48,8 @@ type NarrativeType =
 
 const interactionFilter = ref<InteractionFilter>("calls");
 const narrativeType = ref<NarrativeType>("generic");
+const campaign = ref<string>("");
+const agent = ref<string>("");
 
 const metrics = ref<any>(null);
 const operationsData = ref<any>(null);
@@ -79,6 +79,24 @@ const from = ref(
   isoStartOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000))
 );
 const to = ref(isoEndOfDayExclusive(now));
+
+const fromDateStr = computed({
+  get: () => from.value.slice(0, 10),
+  set: (v: string) => {
+    from.value = isoStartOfDay(new Date(v + "T12:00:00"));
+  },
+});
+
+const toDateStr = computed({
+  get: () => {
+    const d = new Date(to.value);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  },
+  set: (v: string) => {
+    to.value = isoEndOfDayExclusive(new Date(v + "T12:00:00"));
+  },
+});
 
 const totalCalls = computed(() => metrics.value?.totals?.total_calls ?? 0);
 const avgSentiment = computed(
@@ -147,6 +165,8 @@ const sharedParams = computed(() => ({
   from: from.value,
   to: to.value,
   filterKey: interactionFilter.value,
+  ...(campaign.value && { campaign: campaign.value }),
+  ...(agent.value && { agent: agent.value }),
 }));
 
 async function loadMetrics() {
@@ -161,7 +181,6 @@ async function loadMetrics() {
     });
     metrics.value = res.data;
     rawPretty.value = JSON.stringify(res.data, null, 2);
-    open.value.metrics = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message || e?.message || "Failed to load metrics";
@@ -177,7 +196,6 @@ async function loadOperations() {
       params: sharedParams.value,
     });
     operationsData.value = res.data;
-    open.value.operations = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message || e?.message || "Failed to load operations";
@@ -193,7 +211,6 @@ async function loadClientServices() {
       params: sharedParams.value,
     });
     clientServicesData.value = res.data;
-    open.value.client_services = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message ||
@@ -211,7 +228,6 @@ async function loadObjections() {
       params: sharedParams.value,
     });
     objectionsData.value = res.data;
-    open.value.objections = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message || e?.message || "Failed to load objections";
@@ -227,7 +243,6 @@ async function loadCompliance() {
       params: sharedParams.value,
     });
     complianceData.value = res.data;
-    open.value.compliance = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message || e?.message || "Failed to load compliance";
@@ -271,6 +286,8 @@ async function generateNarrative() {
         filterKey: interactionFilter.value,
         provider: narrativeProvider.value,
         narrativeType: narrativeType.value,
+        ...(campaign.value && { campaign: campaign.value }),
+        ...(agent.value && { agent: agent.value }),
       },
     });
 
@@ -281,9 +298,6 @@ async function generateNarrative() {
       rawPretty.value = JSON.stringify(res.data.metrics, null, 2);
     }
 
-    open.value.narrative = true;
-    await loadHistory();
-    open.value.history = true;
   } catch (e: any) {
     error.value =
       e?.response?.data?.message ||
@@ -294,56 +308,8 @@ async function generateNarrative() {
   }
 }
 
-const historyLimit = ref(20);
-const loadingHistory = ref(false);
-const history = ref<Array<any>>([]);
-const selectedHistoryId = ref<string | null>(null);
-
-const selectedHistory = computed(() => {
-  if (!selectedHistoryId.value) return null;
-  return history.value.find((h) => h.id === selectedHistoryId.value) ?? null;
-});
-
-async function loadHistory() {
-  loadingHistory.value = true;
-  error.value = "";
-
-  try {
-    const res = await axios.get(ApiPath.InsightsSummaryNarratives, {
-      params: {
-        limit: historyLimit.value,
-        filterKey: interactionFilter.value,
-        provider: narrativeProvider.value,
-        narrativeType: narrativeType.value,
-      },
-    });
-
-    history.value = Array.isArray(res.data) ? res.data : [];
-
-    if (!history.value.length) {
-      selectedHistoryId.value = null;
-      return;
-    }
-
-    const stillExists = history.value.some(
-      (h) => h.id === selectedHistoryId.value
-    );
-    selectedHistoryId.value = stillExists
-      ? selectedHistoryId.value
-      : history.value[0].id;
-  } catch (e: any) {
-    error.value =
-      e?.response?.data?.message ||
-      e?.message ||
-      "Failed to load narrative history";
-  } finally {
-    loadingHistory.value = false;
-  }
-}
-
 onMounted(async () => {
   await loadAll();
-  await loadHistory();
 });
 </script>
 
@@ -353,12 +319,8 @@ onMounted(async () => {
     <div class="hero">
       <div class="hero-row">
         <div class="hero-left">
-          <div class="hero-kicker">Reporting</div>
           <h1 class="hero-title">Summary Dashboard</h1>
-          <div class="hero-subtitle">
-            View metrics across operations, client services, objections and
-            campaign compliance.
-          </div>
+          <div class="hero-subtitle">Metrics across operations, client services, objections and compliance.</div>
         </div>
 
         <div class="hero-right chip-row">
@@ -394,53 +356,90 @@ onMounted(async () => {
         </div>
 
         <div v-show="isOpen('range')" class="tile-body" @click.stop>
-          <div class="muted">
-            Uses <span class="mono">interactions.createdAt</span> between
-            <span class="mono">from</span> (inclusive) and
-            <span class="mono">to</span> (exclusive).
-          </div>
-
-          <div class="actions-row" style="margin-top: 10px; flex-wrap: wrap">
-            <label class="label">From (ISO)</label>
-            <input v-model="from" class="input" style="min-width: 340px" />
-
-            <label class="label">To (ISO)</label>
-            <input v-model="to" class="input" style="min-width: 340px" />
-
-            <label class="label">Interaction Filter</label>
-            <select v-model="interactionFilter" class="select">
-              <option value="calls">Calls only</option>
-              <option value="chats">Chats only</option>
-              <option value="all">All interactions</option>
-            </select>
-
-            <label class="label">Narrative Provider</label>
-            <select v-model="narrativeProvider" class="select">
-              <option :value="InsightsProvider.OpenAI">OpenAI</option>
-              <option :value="InsightsProvider.Anthropic">Anthropic</option>
-              <option :value="InsightsProvider.Grok">Grok</option>
-              <option :value="InsightsProvider.Gemini">Gemini</option>
-            </select>
-
-            <label class="label">Narrative Type</label>
-            <select v-model="narrativeType" class="select">
-              <option value="generic">Generic Overview</option>
-              <option value="calls_operations">Calls — Operations</option>
-              <option value="calls_client_services">Calls — Client Services</option>
-              <option value="chats_operations">Chats — Operations</option>
-              <option value="chats_client_services">Chats — Client Services</option>
-            </select>
-
+          <div class="filters-row">
+            <div class="filter-group">
+              <label class="label">From</label>
+              <input type="date" v-model="fromDateStr" class="input input--date" />
+            </div>
+            <div class="filter-group">
+              <label class="label">To</label>
+              <input type="date" v-model="toDateStr" class="input input--date" />
+            </div>
+            <div class="filter-group">
+              <label class="label">Interaction</label>
+              <select v-model="interactionFilter" class="select select--sm">
+                <option value="calls">Calls only</option>
+                <option value="chats">Chats only</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="label">Campaign</label>
+              <input type="text" v-model="campaign" class="input" placeholder="All" />
+            </div>
+            <div class="filter-group">
+              <label class="label">Agent</label>
+              <input type="text" v-model="agent" class="input" placeholder="All" />
+            </div>
             <button
               class="btn btn--primary"
+              style="margin-top: 18px"
               :disabled="isLoadingAny"
               @click="loadAll"
             >
               {{ isLoadingAny ? "Loading..." : "Load All" }}
             </button>
+          </div>
 
+          <div v-if="error" class="error-tile" style="margin-top: 10px">
+            <div class="error-title">Error</div>
+            <div class="error-text">{{ error }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Narrative tile -->
+      <div class="tile tile--accent" @click="toggle('narrative')">
+        <div class="tile-head">
+          <div class="tile-icon">🧠</div>
+          <div class="tile-text">
+            <div class="tile-title">Narrative</div>
+            <div class="tile-desc">LLM-generated executive summary</div>
+          </div>
+          <div class="spacer" />
+          <template v-if="!isOpen('narrative')">
+            <span v-if="narrativePretty" class="chip chip--success kpi-chip">Generated</span>
+            <span v-if="narrativeType !== 'generic'" class="chip chip--info kpi-chip">{{ narrativeType }}</span>
+            <span class="chip chip--secondary kpi-chip">{{ narrativeProvider }}</span>
+          </template>
+          <span v-if="loadingNarrative" class="chip chip--secondary kpi-chip">Generating...</span>
+          <div class="chev" :class="{ open: isOpen('narrative') }"></div>
+        </div>
+
+        <div v-show="isOpen('narrative')" class="tile-body" @click.stop>
+          <div class="filters-row" style="margin-bottom: 14px">
+            <div class="filter-group">
+              <label class="label">Provider</label>
+              <select v-model="narrativeProvider" class="select select--sm">
+                <option :value="InsightsProvider.OpenAI">OpenAI</option>
+                <option :value="InsightsProvider.Anthropic">Anthropic</option>
+                <option :value="InsightsProvider.Grok">Grok</option>
+                <option :value="InsightsProvider.Gemini">Gemini</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="label">Type</label>
+              <select v-model="narrativeType" class="select select--sm">
+                <option value="generic">Generic Overview</option>
+                <option value="calls_operations">Calls — Operations</option>
+                <option value="calls_client_services">Calls — Client Services</option>
+                <option value="chats_operations">Chats — Operations</option>
+                <option value="chats_client_services">Chats — Client Services</option>
+              </select>
+            </div>
             <button
               class="btn btn--secondary"
+              style="margin-top: 18px"
               :disabled="loadingNarrative || isLoadingAny || !metrics"
               @click="generateNarrative"
             >
@@ -448,9 +447,11 @@ onMounted(async () => {
             </button>
           </div>
 
-          <div v-if="error" class="error-tile" style="margin-top: 10px">
-            <div class="error-title">Error</div>
-            <div class="error-text">{{ error }}</div>
+          <div v-if="narrativePretty" class="prompt-box">
+            <pre class="pre">{{ narrativePretty }}</pre>
+          </div>
+          <div v-else class="hint">
+            Configure options above and click Generate Narrative. Narratives are cached per filter + provider + type.
           </div>
         </div>
       </div>
@@ -464,6 +465,12 @@ onMounted(async () => {
             <div class="tile-desc">Sentiment, campaigns, contact outcomes, interest</div>
           </div>
           <div class="spacer" />
+          <template v-if="!isOpen('metrics') && metrics">
+            <span class="chip chip--primary kpi-chip">{{ totalCalls }} calls</span>
+            <span class="chip kpi-chip" :class="sentimentChip(avgSentiment)">
+              sentiment {{ typeof avgSentiment === 'number' ? avgSentiment.toFixed(2) : 'n/a' }}
+            </span>
+          </template>
           <div class="chev" :class="{ open: isOpen('metrics') }"></div>
         </div>
 
@@ -650,7 +657,15 @@ onMounted(async () => {
             <div class="tile-desc">Quality scores, dimension averages, coaching themes</div>
           </div>
           <div class="spacer" />
-          <span v-if="loadingOperations" class="chip chip--secondary" style="font-size: 12px">Loading...</span>
+          <span v-if="loadingOperations" class="chip chip--secondary kpi-chip">Loading...</span>
+          <template v-else-if="!isOpen('operations') && operationsData">
+            <span class="chip kpi-chip" :class="scoreChip(operationsData.score_stats.avg_score)">
+              avg score {{ fmtScore(operationsData.score_stats.avg_score) }}
+            </span>
+            <span class="chip chip--secondary kpi-chip">
+              {{ operationsData.score_stats.scored_count }}/{{ operationsData.score_stats.total_count }} scored
+            </span>
+          </template>
           <div class="chev" :class="{ open: isOpen('operations') }"></div>
         </div>
 
@@ -798,7 +813,12 @@ onMounted(async () => {
             <div class="tile-desc">Lead generation, in-market signals, competitor activity</div>
           </div>
           <div class="spacer" />
-          <span v-if="loadingClientServices" class="chip chip--secondary" style="font-size: 12px">Loading...</span>
+          <span v-if="loadingClientServices" class="chip chip--secondary kpi-chip">Loading...</span>
+          <template v-else-if="!isOpen('client_services') && clientServicesData">
+            <span class="chip chip--success kpi-chip">{{ clientServicesData.totals.leads }} leads</span>
+            <span class="chip chip--info kpi-chip">{{ clientServicesData.totals.in_market }} in-market</span>
+            <span class="chip chip--danger kpi-chip">{{ clientServicesData.totals.lost_sales }} lost</span>
+          </template>
           <div class="chev" :class="{ open: isOpen('client_services') }"></div>
         </div>
 
@@ -938,7 +958,17 @@ onMounted(async () => {
             <div class="tile-desc">Most frequent customer objections</div>
           </div>
           <div class="spacer" />
-          <span v-if="loadingObjections" class="chip chip--secondary" style="font-size: 12px">Loading...</span>
+          <span v-if="loadingObjections" class="chip chip--secondary kpi-chip">Loading...</span>
+          <template v-else-if="!isOpen('objections') && objectionsData">
+            <span class="chip chip--warning kpi-chip">{{ objectionsData.totals.with_objections }} objections</span>
+            <span class="chip chip--secondary kpi-chip">
+              {{
+                objectionsData.totals.total > 0
+                  ? ((objectionsData.totals.with_objections / objectionsData.totals.total) * 100).toFixed(0) + '% rate'
+                  : 'n/a'
+              }}
+            </span>
+          </template>
           <div class="chev" :class="{ open: isOpen('objections') }"></div>
         </div>
 
@@ -996,7 +1026,10 @@ onMounted(async () => {
             <div class="tile-desc">Compliance check pass rates by campaign</div>
           </div>
           <div class="spacer" />
-          <span v-if="loadingCompliance" class="chip chip--secondary" style="font-size: 12px">Loading...</span>
+          <span v-if="loadingCompliance" class="chip chip--secondary kpi-chip">Loading...</span>
+          <template v-else-if="!isOpen('compliance') && complianceData">
+            <span class="chip chip--success kpi-chip">{{ complianceData.total_with_compliance }} with data</span>
+          </template>
           <div class="chev" :class="{ open: isOpen('compliance') }"></div>
         </div>
 
@@ -1051,131 +1084,6 @@ onMounted(async () => {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Narrative tile -->
-      <div class="tile" @click="toggle('narrative')">
-        <div class="tile-head">
-          <div class="tile-icon">🧠</div>
-          <div class="tile-text">
-            <div class="tile-title">Narrative</div>
-            <div class="tile-desc">LLM-generated executive summary</div>
-          </div>
-          <div class="spacer" />
-          <span v-if="narrativeType !== 'generic'" class="chip chip--info" style="font-size: 12px">{{ narrativeType }}</span>
-          <div class="chev" :class="{ open: isOpen('narrative') }"></div>
-        </div>
-
-        <div v-show="isOpen('narrative')" class="tile-body" @click.stop>
-          <div class="muted">
-            Generates a narrative summary from aggregated metrics.
-            Use "Generate Narrative" in the Date Range tile. Narratives are cached per filter + provider + type combination.
-          </div>
-
-          <div
-            v-if="narrativePretty"
-            class="prompt-box"
-            style="margin-top: 10px"
-          >
-            <pre class="pre">{{ narrativePretty }}</pre>
-          </div>
-          <div v-else class="hint" style="margin-top: 10px">
-            Click "Generate Narrative" in the Date Range tile.
-          </div>
-        </div>
-      </div>
-
-      <!-- History tile -->
-      <div class="tile" @click="toggle('history')">
-        <div class="tile-head">
-          <div class="tile-icon">🕘</div>
-          <div class="tile-text">
-            <div class="tile-title">Historical Narratives</div>
-            <div class="tile-desc">Previously generated summaries</div>
-          </div>
-          <div class="spacer" />
-          <div class="chev" :class="{ open: isOpen('history') }"></div>
-        </div>
-
-        <div v-show="isOpen('history')" class="tile-body" @click.stop>
-          <div class="muted">
-            Loads the latest saved narratives (cached outputs) for the selected type.
-          </div>
-
-          <div class="actions-row" style="margin-top: 10px; flex-wrap: wrap">
-            <label class="label">Limit</label>
-            <select v-model.number="historyLimit" class="select">
-              <option :value="10">10</option>
-              <option :value="20">20</option>
-              <option :value="50">50</option>
-              <option :value="100">100</option>
-            </select>
-
-            <button
-              class="btn btn--ghost"
-              :disabled="loadingHistory"
-              @click="loadHistory"
-            >
-              {{ loadingHistory ? "Loading..." : "Refresh history" }}
-            </button>
-          </div>
-
-          <div
-            v-if="!history.length && !loadingHistory"
-            class="hint"
-            style="margin-top: 10px"
-          >
-            No narratives saved yet for this type. Generate one to see it here.
-          </div>
-
-          <div v-if="history.length" class="split" style="margin-top: 12px">
-            <div class="panel panel--scroll" style="max-height: 320px">
-              <div
-                v-for="h in history"
-                :key="h.id"
-                class="list-row"
-                :class="{ 'list-row--selected': selectedHistoryId === h.id }"
-                @click="selectedHistoryId = h.id"
-              >
-                <div class="row-top">
-                  <span class="chip chip--secondary">{{ h.filterKey }}</span>
-                  <span class="chip chip--info">{{ h.narrativeType || "generic" }}</span>
-                  <span class="chip">{{ h.providerUsed || "provider?" }}</span>
-                  <span class="mono" style="opacity: 0.75">{{
-                    String(h.id).slice(0, 8)
-                  }}</span>
-                </div>
-                <div class="muted mono">{{ h.from }} → {{ h.to }}</div>
-                <div class="muted" style="margin-top: 4px">
-                  created: <span class="mono">{{ h.createdAt }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="panel">
-              <div v-if="selectedHistory">
-                <div class="row-top">
-                  <div class="tile-title">Selected Narrative</div>
-                  <span class="chip chip--info">{{ selectedHistory.narrativeType || "generic" }}</span>
-                  <span class="chip">{{ selectedHistory.providerUsed || "provider?" }}</span>
-                  <span class="chip">{{ selectedHistory.model || "model?" }}</span>
-                </div>
-
-                <div class="hint" style="margin-top: 8px">
-                  Window:
-                  <span class="mono">{{ selectedHistory.from }}</span> to
-                  <span class="mono">{{ selectedHistory.to }}</span>
-                </div>
-
-                <div class="prompt-box" style="margin-top: 10px">
-                  <pre class="pre">{{ toPrettyInsights(selectedHistory.narrative) }}</pre>
-                </div>
-              </div>
-
-              <div v-else class="hint">Select a narrative on the left.</div>
             </div>
           </div>
         </div>

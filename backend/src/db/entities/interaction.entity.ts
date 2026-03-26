@@ -55,6 +55,9 @@ export class Interaction {
   @Column({ type: 'varchar', length: 50, nullable: true })
   campaign!: string | null;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  agent!: string | null;
+
   @Column({ type: 'datetime2', nullable: true })
   interactionDateTime!: Date | null;
 }

@@ -46,7 +46,7 @@ const open = ref<Record<SectionKey, boolean>>({
   summary: true,
   actions: true,
   lastRun: false,
-  history: true,
+  history: false,
 });
 
 const toggle = (key: SectionKey) => { open.value[key] = !open.value[key]; };
@@ -168,7 +168,6 @@ async function pollJobs() {
       null,
       2
     );
-    open.value.lastRun = true;
   }
   if (justFinished.length > 0) {
     await loadSummary();
@@ -317,21 +316,12 @@ onUnmounted(stopPolling);
       <div class="hero">
         <div class="hero-row">
           <div class="hero-left">
-            <div class="hero-kicker">Insights Processing</div>
             <h1 class="hero-title">Batch Dashboard</h1>
-            <div class="hero-subtitle">
-              Monitor queue status and run batch actions to transcribe and
-              generate insights.
-            </div>
+            <div class="hero-subtitle">Monitor queue status and run batch transcription and insights jobs.</div>
           </div>
-
-          <div class="hero-right">
-            <span class="chip chip--primary">
-              Total rows: <strong style="margin-left: 6px">{{ totalRows }}</strong>
-            </span>
-            <span class="chip chip--secondary">
-              Batch: <strong style="margin-left: 6px">{{ limit }}</strong>
-            </span>
+          <div class="hero-right chip-row">
+            <span class="chip chip--primary">Total: <strong style="margin-left:6px">{{ totalRows }}</strong></span>
+            <span class="chip chip--secondary">Batch size: <strong style="margin-left:6px">{{ limit }}</strong></span>
           </div>
         </div>
       </div>
@@ -339,7 +329,7 @@ onUnmounted(stopPolling);
       <!-- Tiles -->
       <div class="grid">
         <!-- Summary tile -->
-        <div class="tile" @click="toggle('summary')">
+        <div class="tile tile--accent" @click="toggle('summary')">
           <div class="tile-head">
             <div class="tile-icon">Σ</div>
             <div class="tile-text">
@@ -347,76 +337,54 @@ onUnmounted(stopPolling);
               <div class="tile-desc">Counts by status</div>
             </div>
             <div class="spacer" />
+            <span v-if="summary" class="chip chip--primary kpi-chip">{{ summary.totalRows }} total</span>
+            <button
+              v-if="isOpen('summary')"
+              class="btn btn--ghost btn--sm"
+              :disabled="loadingSummary"
+              style="margin-right: 8px"
+              @click.stop="loadSummary"
+            >
+              {{ loadingSummary ? "Refreshing..." : "Refresh" }}
+            </button>
             <div class="chev" :class="{ open: isOpen('summary') }"></div>
           </div>
 
           <div v-show="isOpen('summary')" class="tile-body" @click.stop>
-            <div class="muted">
-              Shows current counts from
-              <span class="mono">interactions.status</span>
-            </div>
-
-            <div class="toolbar">
-              <button
-                class="btn btn--ghost"
-                :disabled="loadingSummary"
-                @click="loadSummary"
-              >
-                {{ loadingSummary ? "Refreshing..." : "Refresh" }}
-              </button>
-            </div>
-
             <div v-if="summary">
-              <div class="stats" style="margin-bottom: 12px">
-                <div class="stat">
-                  <div class="stat-label">Total rows</div>
-                  <div class="stat-value">{{ summary.totalRows }}</div>
-                </div>
-                <div class="stat">
-                  <div class="stat-label">Calls</div>
-                  <div class="stat-value">{{ summary.calls.total }}</div>
-                </div>
-                <div class="stat">
-                  <div class="stat-label">Chats</div>
-                  <div class="stat-value">{{ summary.chats.total }}</div>
-                </div>
-              </div>
-
-              <div class="tile-title" style="font-size: 13px; margin-bottom: 6px">Calls by status</div>
-              <div class="stats" style="margin-bottom: 12px">
-                <div
-                  v-for="[status, count] in callStatusEntries"
-                  :key="'call-' + status"
-                  class="stat"
+              <!-- Calls row -->
+              <div class="summary-row">
+                <span class="summary-row-label">📞 Calls</span>
+                <span class="chip chip--primary">{{ summary.calls.total }} total</span>
+                <span
+                  v-for="[st, count] in callStatusEntries"
+                  :key="'call-' + st"
+                  :class="badgeClass(st)"
                 >
-                  <div class="stat-label">
-                    <span :class="badgeClass(status)">{{ status }}</span>
-                  </div>
-                  <div class="stat-value">{{ count }}</div>
-                </div>
-                <div v-if="!callStatusEntries.length" class="hint">No calls.</div>
+                  {{ st }}: {{ count }}
+                </span>
+                <span v-if="!callStatusEntries.length" class="hint">No calls.</span>
               </div>
-
-              <div class="tile-title" style="font-size: 13px; margin-bottom: 6px">Chats by status</div>
-              <div class="stats">
-                <div
-                  v-for="[status, count] in chatStatusEntries"
-                  :key="'chat-' + status"
-                  class="stat"
+              <!-- Chats row -->
+              <div class="summary-row" style="margin-top: 10px">
+                <span class="summary-row-label">💬 Chats</span>
+                <span class="chip chip--secondary">{{ summary.chats.total }} total</span>
+                <span
+                  v-for="[st, count] in chatStatusEntries"
+                  :key="'chat-' + st"
+                  :class="badgeClass(st)"
                 >
-                  <div class="stat-label">
-                    <span :class="badgeClass(status)">{{ status }}</span>
-                  </div>
-                  <div class="stat-value">{{ count }}</div>
-                </div>
-                <div v-if="!chatStatusEntries.length" class="hint">No chats.</div>
+                  {{ st }}: {{ count }}
+                </span>
+                <span v-if="!chatStatusEntries.length" class="hint">No chats.</span>
               </div>
             </div>
+            <div v-else class="hint">Load to see counts.</div>
           </div>
         </div>
 
         <!-- Actions tile -->
-        <div class="tile tile-accent" @click="toggle('actions')">
+        <div class="tile tile--accent" @click="toggle('actions')">
           <div class="tile-head">
             <div class="tile-icon">⚡</div>
             <div class="tile-text">
@@ -428,12 +396,7 @@ onUnmounted(stopPolling);
           </div>
 
           <div v-show="isOpen('actions')" class="tile-body" @click.stop>
-            <div class="muted">
-              Processes records sequentially (safe for prototype). Choose batch
-              size and run.
-            </div>
-
-            <div class="actions-row">
+            <div class="batch-grid">
               <label class="label">Batch size</label>
               <select v-model.number="limit" class="select">
                 <option :value="10">10</option>
@@ -444,9 +407,13 @@ onUnmounted(stopPolling);
                 <option :value="500">500</option>
                 <option :value="1000">1000</option>
               </select>
-            </div>
+              <button class="btn btn--primary" :disabled="transcribeDisabled" @click="runBatchTranscribe">
+                {{ startingTranscribe ? "Starting..." : hasRunningJob("transcribe") ? "Transcribing…" : `Transcribe next ${limit}` }}
+              </button>
+              <button class="btn btn--ghost btn--sm" :disabled="loadingSummary" @click.stop="loadSummary">
+                {{ loadingSummary ? "Refreshing..." : "Refresh" }}
+              </button>
 
-            <div class="actions-row">
               <label class="label">Insights Provider</label>
               <select v-model="insightsProvider" class="select">
                 <option :value="InsightsProvider.OpenAI">OpenAI</option>
@@ -454,38 +421,11 @@ onUnmounted(stopPolling);
                 <option :value="InsightsProvider.Grok">Grok</option>
                 <option :value="InsightsProvider.Gemini">Gemini</option>
               </select>
-            </div>
-
-            <div class="actions-row">
-              <button
-                class="btn btn--primary"
-                :disabled="transcribeDisabled"
-                @click="runBatchTranscribe"
-              >
-                {{ startingTranscribe ? "Starting..." : hasRunningJob("transcribe") ? "Transcribing…" : `Transcribe next ${limit}` }}
-              </button>
-
-              <button
-                class="btn btn--secondary"
-                :disabled="insightsDisabled"
-                @click="runBatchInsights"
-              >
+              <button class="btn btn--secondary" :disabled="insightsDisabled" @click="runBatchInsights">
                 {{ startingInsights ? "Starting..." : hasRunningJob("insights_calls") ? "Generating…" : `Call insights next ${limit}` }}
               </button>
-
-              <button
-                class="btn btn--secondary"
-                :disabled="insightsChatsDisabled"
-                @click="runBatchInsightsChats"
-              >
+              <button class="btn btn--secondary" :disabled="insightsChatsDisabled" @click="runBatchInsightsChats">
                 {{ startingInsightsChats ? "Starting..." : hasRunningJob("insights_chats") ? "Generating…" : `Chat insights next ${limit}` }}
-              </button>
-
-              <button
-                class="btn btn--ghost"
-                @click="loadSummary"
-              >
-                Refresh summary
               </button>
             </div>
           </div>
@@ -556,6 +496,13 @@ onUnmounted(stopPolling);
               <div class="tile-desc">Inspect the returned payload</div>
             </div>
             <div class="spacer" />
+            <template v-if="!isOpen('lastRun')">
+              <span v-if="!lastJobResult" class="chip chip--secondary kpi-chip">No batch run yet</span>
+              <template v-else-if="lastJobResult">
+                <span class="chip chip--success kpi-chip">{{ JSON.parse(lastJobResult).status }}</span>
+                <span class="chip chip--secondary kpi-chip">{{ JSON.parse(lastJobResult).progress }}/{{ JSON.parse(lastJobResult).total }}</span>
+              </template>
+            </template>
             <div class="chev" :class="{ open: isOpen('lastRun') }"></div>
           </div>
 
@@ -568,7 +515,7 @@ onUnmounted(stopPolling);
             <div class="toolbar">
               <button
                 class="btn btn--ghost btn--sm"
-                :disabled="!lastRunPretty"
+                :disabled="!lastJobResult"
                 @click="copyResult"
               >
                 {{ copyBtnLabel }}
@@ -591,7 +538,14 @@ onUnmounted(stopPolling);
               <div class="tile-desc">Last 20 jobs</div>
             </div>
             <div class="spacer" />
+            <template v-if="!isOpen('history') && jobHistory.length">
+              <span :class="jobStatusClass(jobHistory[0].status)" style="font-size:11px;padding:3px 8px">{{ jobHistory[0].status }}</span>
+              <span class="chip chip--secondary kpi-chip">{{ jobTypeLabel(jobHistory[0].type) }}</span>
+              <span class="chip chip--secondary kpi-chip">{{ fmtDate(jobHistory[0].completedAt ?? jobHistory[0].startedAt) }}</span>
+            </template>
+            <span v-else-if="!isOpen('history') && !jobHistory.length" class="chip chip--secondary kpi-chip">No history</span>
             <button
+              v-if="isOpen('history')"
               class="btn btn--ghost btn--sm"
               :disabled="loadingHistory"
               style="margin-right: 8px"
@@ -651,3 +605,36 @@ onUnmounted(stopPolling);
     </div>
   </div>
 </template>
+
+<style scoped>
+.summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.summary-row-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted, #888);
+  min-width: 56px;
+}
+
+.batch-grid {
+  display: grid;
+  grid-template-columns: max-content 160px auto auto;
+  gap: 8px 10px;
+  align-items: center;
+}
+
+.batch-grid .label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.batch-grid .select {
+  width: 100%;
+}
+</style>

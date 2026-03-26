@@ -11,11 +11,17 @@ type NarrativeType =
   | "chats_operations"
   | "chats_client_services";
 
-const filterKey = ref<InteractionFilter>("calls");
-const narrativeType = ref<NarrativeType>("generic");
-const provider = ref<string>(InsightsProvider.OpenAI);
+const filterKey = ref<string>("");
+const narrativeType = ref<string>("");
+const provider = ref<string>("");
+const campaign = ref<string>("");
+const agent = ref<string>("");
 const loading = ref(false);
 const error = ref("");
+const _today = new Date();
+const _sevenDaysAgo = new Date(_today.getTime() - 6 * 24 * 60 * 60 * 1000);
+const dateFrom = ref(_sevenDaysAgo.toISOString().slice(0, 10));
+const dateTo = ref(_today.toISOString().slice(0, 10));
 const narratives = ref<Array<any>>([]);
 const selectedId = ref<string | null>(null);
 
@@ -79,6 +85,22 @@ function priorityClass(p: string) {
   return riskClass(p);
 }
 
+function providerChip(p: string | null | undefined) {
+  const v = (p || "").toLowerCase();
+  if (v === "openai") return "chip chip--ins-openai";
+  if (v === "anthropic") return "chip chip--ins-anthropic";
+  if (v === "gemini") return "chip chip--ins-gemini";
+  if (v === "grok" || v === "xai") return "chip chip--ins-grok";
+  return "chip chip--secondary";
+}
+
+function channelChip(k: string | null | undefined) {
+  const v = (k || "").toLowerCase();
+  if (v === "calls") return "chip chip--tr-deepgram";
+  if (v === "chats") return "chip chip--info";
+  return "chip chip--secondary";
+}
+
 async function load() {
   loading.value = true;
   error.value = "";
@@ -86,9 +108,13 @@ async function load() {
     const res = await axios.get(ApiPath.InsightsSummaryNarratives, {
       params: {
         limit: 100,
-        filterKey: filterKey.value,
-        provider: provider.value,
-        narrativeType: narrativeType.value,
+        ...(filterKey.value && { filterKey: filterKey.value }),
+        ...(provider.value && { provider: provider.value }),
+        ...(narrativeType.value && { narrativeType: narrativeType.value }),
+        ...(dateFrom.value && { from: dateFrom.value }),
+        ...(dateTo.value && { to: dateTo.value }),
+        ...(campaign.value && { campaign: campaign.value }),
+        ...(agent.value && { agent: agent.value }),
       },
     });
     narratives.value = Array.isArray(res.data) ? res.data : [];
@@ -105,67 +131,95 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="page">
-    <div class="page-inner">
-      <!-- Hero -->
+  <div>
+    <!-- Hero -->
       <div class="hero">
         <div class="hero-row">
           <div>
-            <div class="hero-kicker">AI Insights</div>
             <h1 class="hero-title">Narratives</h1>
-            <div class="hero-subtitle">
-              Browse and view all historical AI-generated narrative summaries.
-            </div>
+            <div class="hero-subtitle">Browse historical AI-generated narrative summaries.</div>
           </div>
         </div>
       </div>
 
       <!-- Controls -->
-      <div class="controls-bar">
-        <div class="controls-row">
-          <div class="control-group">
-            <label class="control-label">Channel</label>
-            <select v-model="filterKey" class="select">
-              <option value="calls">Calls</option>
-              <option value="chats">Chats</option>
-              <option value="all">All</option>
-            </select>
+      <div class="tile tile--accent" style="margin-bottom: 14px">
+        <div class="tile-head">
+          <div class="tile-icon">⚙</div>
+          <div class="tile-text">
+            <div class="tile-title">Filters</div>
+            <div class="tile-desc">Filter narratives by channel, type, provider and date</div>
           </div>
-
-          <div class="control-group">
-            <label class="control-label">Narrative Type</label>
-            <select v-model="narrativeType" class="select">
-              <option value="generic">Generic</option>
-              <option value="calls_operations">Calls — Operations</option>
-              <option value="calls_client_services">Calls — Client Services</option>
-              <option value="chats_operations">Chats — Operations</option>
-              <option value="chats_client_services">Chats — Client Services</option>
-            </select>
-          </div>
-
-          <div class="control-group">
-            <label class="control-label">Provider</label>
-            <select v-model="provider" class="select">
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="gemini">Gemini</option>
-              <option value="grok">Grok</option>
-            </select>
-          </div>
-
-          <button class="btn btn--primary" :disabled="loading" @click="load">
-            {{ loading ? "Loading…" : "Load" }}
-          </button>
         </div>
+        <div class="tile-body">
+          <div class="controls-row">
+            <div class="control-group">
+              <label class="control-label">Channel</label>
+              <select v-model="filterKey" class="select">
+                <option value="">Any</option>
+                <option value="calls">Calls</option>
+                <option value="chats">Chats</option>
+                <option value="all">All</option>
+              </select>
+            </div>
 
-        <!-- Narrative selector -->
-        <div v-if="narratives.length" class="control-group" style="margin-top: 10px">
-          <label class="control-label">Narrative</label>
-          <select v-model="selectedId" class="select select--wide">
-            <option v-for="n in narratives" :key="n.id" :value="n.id">
-              {{ labelForEntry(n) }} &mdash; {{ fmtDateTime(n.createdAt) }}
-            </option>
-          </select>
+            <div class="control-group">
+              <label class="control-label">Narrative Type</label>
+              <select v-model="narrativeType" class="select">
+                <option value="">Any</option>
+                <option value="generic">Generic</option>
+                <option value="calls_operations">Calls — Operations</option>
+                <option value="calls_client_services">Calls — Client Services</option>
+                <option value="chats_operations">Chats — Operations</option>
+                <option value="chats_client_services">Chats — Client Services</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Provider</label>
+              <select v-model="provider" class="select">
+                <option value="">Any</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="gemini">Gemini</option>
+                <option value="grok">Grok</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Campaign</label>
+              <input type="text" v-model="campaign" class="input" placeholder="All" />
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Agent</label>
+              <input type="text" v-model="agent" class="input" placeholder="All" />
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Created From</label>
+              <input type="date" v-model="dateFrom" class="input input--date" />
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Created To</label>
+              <input type="date" v-model="dateTo" class="input input--date" />
+            </div>
+
+            <button class="btn btn--primary" :disabled="loading" @click="load" style="margin-top: 18px">
+              {{ loading ? "Loading…" : "Load" }}
+            </button>
+          </div>
+
+          <!-- Narrative selector -->
+          <div v-if="narratives.length" class="control-group" style="margin-top: 10px">
+            <label class="control-label">Narrative</label>
+            <select v-model="selectedId" class="select select--wide">
+              <option v-for="n in narratives" :key="n.id" :value="n.id">
+                {{ labelForEntry(n) }} &mdash; {{ fmtDateTime(n.createdAt) }}
+              </option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -181,12 +235,12 @@ onMounted(load);
       <template v-else-if="selected && narrative">
         <!-- Meta strip -->
         <div class="meta-strip">
-          <span class="chip chip--secondary">{{ selected.filterKey }}</span>
-          <span class="chip chip--secondary">{{ selected.narrativeType }}</span>
-          <span class="chip chip--secondary">{{ selected.providerUsed }}</span>
+          <span :class="channelChip(selected.filterKey)">{{ selected.filterKey || "any" }}</span>
+          <span class="chip chip--primary">{{ selected.narrativeType || "generic" }}</span>
+          <span :class="providerChip(selected.providerUsed)">{{ selected.providerUsed }}</span>
           <span v-if="selected.model" class="chip chip--secondary">{{ selected.model }}</span>
-          <span class="chip">{{ fmtDate(selected.from) }} → {{ fmtDate(selected.to) }}</span>
-          <span class="chip muted">Generated {{ fmtDateTime(selected.createdAt) }}</span>
+          <span class="chip chip--info">{{ fmtDate(selected.from) }} → {{ fmtDate(selected.to) }}</span>
+          <span class="chip chip--secondary">Generated {{ fmtDateTime(selected.createdAt) }}</span>
         </div>
 
         <!-- Headline -->
@@ -253,19 +307,10 @@ onMounted(load);
           </template>
         </div>
       </template>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.controls-bar {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
-  margin-bottom: 14px;
-}
-
 .controls-row {
   display: flex;
   align-items: flex-end;

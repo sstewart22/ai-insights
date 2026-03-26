@@ -53,10 +53,12 @@ export class InsightsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('filterKey') filterKey?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const filter = normalizeInteractionFilter(filterKey);
-    return this.svcSummary.getMetricsSummary(fromDate, toDate, filter);
+    return this.svcSummary.getMetricsSummary(fromDate, toDate, filter, campaign, agent);
   }
 
   @Get('summary/operations')
@@ -64,10 +66,12 @@ export class InsightsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('filterKey') filterKey?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const filter = normalizeInteractionFilter(filterKey);
-    return this.svcSummary.getOperationsMetrics(fromDate, toDate, filter);
+    return this.svcSummary.getOperationsMetrics(fromDate, toDate, filter, campaign, agent);
   }
 
   @Get('summary/client-services')
@@ -75,10 +79,12 @@ export class InsightsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('filterKey') filterKey?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const filter = normalizeInteractionFilter(filterKey);
-    return this.svcSummary.getClientServicesMetrics(fromDate, toDate, filter);
+    return this.svcSummary.getClientServicesMetrics(fromDate, toDate, filter, campaign, agent);
   }
 
   @Get('summary/objections')
@@ -86,10 +92,12 @@ export class InsightsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('filterKey') filterKey?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const filter = normalizeInteractionFilter(filterKey);
-    return this.svcSummary.getObjectionsMetrics(fromDate, toDate, filter);
+    return this.svcSummary.getObjectionsMetrics(fromDate, toDate, filter, campaign, agent);
   }
 
   @Get('summary/compliance')
@@ -97,10 +105,12 @@ export class InsightsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('filterKey') filterKey?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const filter = normalizeInteractionFilter(filterKey);
-    return this.svcSummary.getCampaignComplianceMetrics(fromDate, toDate, filter);
+    return this.svcSummary.getCampaignComplianceMetrics(fromDate, toDate, filter, campaign, agent);
   }
 
   @Post('summary/narrative')
@@ -110,13 +120,15 @@ export class InsightsController {
     @Query('filterKey') filterKey?: string,
     @Query('provider') providerRaw?: string,
     @Query('narrativeType') narrativeTypeRaw?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const provider = normalizeProvider(providerRaw);
     const filter = normalizeInteractionFilter(filterKey);
     const narrativeType = normalizeNarrativeType(narrativeTypeRaw);
 
-    return this.svcSummary.getNarrativeSummary(fromDate, toDate, filter, provider, narrativeType);
+    return this.svcSummary.getNarrativeSummary(fromDate, toDate, filter, provider, narrativeType, campaign, agent);
   }
 
   @Get('summary/narratives')
@@ -125,6 +137,8 @@ export class InsightsController {
     @Query('filterKey') filterKey?: string,
     @Query('provider') providerRaw?: string,
     @Query('narrativeType') narrativeTypeRaw?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
   ) {
     const parsedLimit = parseInt(limit ?? '20', 10);
 
@@ -141,6 +155,8 @@ export class InsightsController {
       filterKey: filter,
       provider,
       narrativeType,
+      campaign,
+      agent,
     });
   }
 }
