@@ -9,11 +9,11 @@ export default defineConfig({
     port: 8082,
     proxy: {
       "^/uiapi/": {
-        target: process.env.API_BASE_URL || "http://localhost:3007",
+        target: process.env.API_BASE_URL || "http://localhost:3008",
         changeOrigin: true,
       },
       "^/health": {
-        target: process.env.API_BASE_URL || "http://localhost:3007",
+        target: process.env.API_BASE_URL || "http://localhost:3008",
         changeOrigin: true,
       },
     },

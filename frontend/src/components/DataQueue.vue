@@ -480,7 +480,7 @@ async function loadDetails(recordingId: string) {
     }
     const idx = recordings.value.findIndex((r) => r.id === recordingId);
     if (idx >= 0) {
-      recordings.value[idx] = { ...recordings.value[idx], insightProviderUsed: i.data?.providerUsed ?? null };
+      recordings.value[idx] = { ...recordings.value[idx]!, insightProviderUsed: i.data?.providerUsed ?? null };
     }
   } catch {
     // not found yet

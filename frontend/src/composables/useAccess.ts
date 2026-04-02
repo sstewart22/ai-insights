@@ -57,6 +57,7 @@ export function useAccess(userOverride?: Ref<any> | { value: any }) {
     isDev,
     isAdmin,
     isSupervisor,
+    isAgent,
     isUser,
     canSeeDevTools,
     canSeeAdminTools,

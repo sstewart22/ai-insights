@@ -539,9 +539,9 @@ onUnmounted(stopPolling);
             </div>
             <div class="spacer" />
             <template v-if="!isOpen('history') && jobHistory.length">
-              <span :class="jobStatusClass(jobHistory[0].status)" style="font-size:11px;padding:3px 8px">{{ jobHistory[0].status }}</span>
-              <span class="chip chip--secondary kpi-chip">{{ jobTypeLabel(jobHistory[0].type) }}</span>
-              <span class="chip chip--secondary kpi-chip">{{ fmtDate(jobHistory[0].completedAt ?? jobHistory[0].startedAt) }}</span>
+              <span :class="jobStatusClass(jobHistory[0]!.status)" style="font-size:11px;padding:3px 8px">{{ jobHistory[0]!.status }}</span>
+              <span class="chip chip--secondary kpi-chip">{{ jobTypeLabel(jobHistory[0]!.type) }}</span>
+              <span class="chip chip--secondary kpi-chip">{{ fmtDate(jobHistory[0]!.completedAt ?? jobHistory[0]!.startedAt) }}</span>
             </template>
             <span v-else-if="!isOpen('history') && !jobHistory.length" class="chip chip--secondary kpi-chip">No history</span>
             <button

@@ -594,9 +594,9 @@ onMounted(async () => {
                 >{{ fmtScore(d.agent) }}</span>
                 <span
                   class="dim-delta"
-                  :class="d.agent >= d.overall ? 'dim-delta--positive' : 'dim-delta--negative'"
+                  :class="d.agent >= (d.overall ?? 0) ? 'dim-delta--positive' : 'dim-delta--negative'"
                 >
-                  {{ d.agent >= d.overall ? "+" : "" }}{{ fmtScore(d.agent - d.overall) }}
+                  {{ d.agent >= (d.overall ?? 0) ? "+" : "" }}{{ fmtScore(d.agent - (d.overall ?? 0)) }}
                 </span>
               </template>
             </div>
