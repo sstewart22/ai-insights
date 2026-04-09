@@ -224,11 +224,6 @@ const chatMessages = computed<ChatMessage[]>(() => {
   }
 });
 
-// Campaigns in dataset
-const campaignsInData = computed(() => {
-  if (!csData.value) return [];
-  return csData.value.campaigns_in_data ?? [];
-});
 
 // ── API calls ────────────────────────────────────────────────────────────────
 async function loadFilterOptions() {

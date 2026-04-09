@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import axios from "axios";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ApiPath } from "@/enums/api";
 import { toPrettyInsights } from "@/utils/insights-response";
 
