@@ -68,10 +68,15 @@ export class InsightsController {
     @Query('campaign') campaign?: string,
     @Query('agent') agent?: string,
     @Query('excludeOutcomes') excludeOutcomesRaw?: string,
+    @Query('excludePartial') excludePartial?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const filter = normalizeInteractionFilter(filterKey);
-    return this.svcSummary.getOpsDimensionComparison(fromDate, toDate, filter, campaign, agent, parseExcludeOutcomes(excludeOutcomesRaw));
+    return this.svcSummary.getOpsDimensionComparison(
+      fromDate, toDate, filter, campaign, agent,
+      parseExcludeOutcomes(excludeOutcomesRaw),
+      excludePartial === 'true',
+    );
   }
 
   @Get('ops/interactions-by-bucket')
@@ -140,6 +145,58 @@ export class InsightsController {
       Math.min(parseInt(limit ?? '200', 10) || 200, 500),
       parseInt(offset ?? '0', 10) || 0,
       campaign, agent, parseExcludeOutcomes(excludeOutcomesRaw),
+    );
+  }
+
+  @Get('ops/interactions-by-partial-outcome')
+  async opsByPartialOutcome(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('filterKey') filterKey?: string,
+    @Query('outcome') outcome?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
+    @Query('excludeOutcomes') excludeOutcomesRaw?: string,
+    @Query('layer') layer?: string,
+  ) {
+    if (!outcome) throw new BadRequestException('outcome is required');
+    const { fromDate, toDate } = parseDateRange(from, to);
+    const filter = normalizeInteractionFilter(filterKey);
+    const layerKey: 'ops' | 'qa' = layer === 'qa' ? 'qa' : 'ops';
+    return this.svcSummary.getInteractionsByPartialScoreOutcome(
+      fromDate, toDate, filter, outcome,
+      Math.min(parseInt(limit ?? '200', 10) || 200, 500),
+      parseInt(offset ?? '0', 10) || 0,
+      campaign, agent, parseExcludeOutcomes(excludeOutcomesRaw),
+      layerKey,
+    );
+  }
+
+  @Get('ops/interactions-by-low-score-agent')
+  async opsByLowScoreAgent(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('filterKey') filterKey?: string,
+    @Query('agent') targetAgent?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('campaign') campaign?: string,
+    @Query('filterAgent') filterAgent?: string,
+    @Query('excludeOutcomes') excludeOutcomesRaw?: string,
+    @Query('layer') layer?: string,
+  ) {
+    if (!targetAgent) throw new BadRequestException('agent is required');
+    const { fromDate, toDate } = parseDateRange(from, to);
+    const filter = normalizeInteractionFilter(filterKey);
+    const layerKey: 'ops' | 'qa' = layer === 'qa' ? 'qa' : 'ops';
+    return this.svcSummary.getInteractionsByLowScoreAlertAgent(
+      fromDate, toDate, filter, targetAgent,
+      Math.min(parseInt(limit ?? '200', 10) || 200, 500),
+      parseInt(offset ?? '0', 10) || 0,
+      campaign, filterAgent, parseExcludeOutcomes(excludeOutcomesRaw),
+      layerKey,
     );
   }
 
@@ -258,6 +315,11 @@ export class InsightsController {
     return detail;
   }
 
+  @Get('interactions/search')
+  async searchInteractions(@Query('q') q?: string) {
+    return this.svcSummary.searchInteractions(q ?? '');
+  }
+
   @Get('summary')
   async summary(
     @Query('from') from?: string,
@@ -280,10 +342,15 @@ export class InsightsController {
     @Query('campaign') campaign?: string,
     @Query('agent') agent?: string,
     @Query('excludeOutcomes') excludeOutcomesRaw?: string,
+    @Query('excludePartial') excludePartial?: string,
   ) {
     const { fromDate, toDate } = parseDateRange(from, to);
     const filter = normalizeInteractionFilter(filterKey);
-    return this.svcSummary.getOperationsMetrics(fromDate, toDate, filter, campaign, agent, parseExcludeOutcomes(excludeOutcomesRaw));
+    return this.svcSummary.getOperationsMetrics(
+      fromDate, toDate, filter, campaign, agent,
+      parseExcludeOutcomes(excludeOutcomesRaw),
+      excludePartial === 'true',
+    );
   }
 
   @Get('summary/client-services')

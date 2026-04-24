@@ -370,7 +370,13 @@ export class InsightsSummaryService {
   // OPERATIONS METRICS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async getOperationsMetrics(from: Date, to: Date, filterKey: InteractionFilter = 'calls', campaign?: string, agent?: string, excludeOutcomes?: string[]) {
+  async getOperationsMetrics(
+    from: Date, to: Date,
+    filterKey: InteractionFilter = 'calls',
+    campaign?: string, agent?: string,
+    excludeOutcomes?: string[],
+    excludePartial = false,
+  ) {
     const dateWhere = 'COALESCE(ia.interactionDateTime, ia.createdAt) >= :from AND COALESCE(ia.interactionDateTime, ia.createdAt) < :to';
     const dateParams = { from, to };
     const { clause: filterClause, extraParams } = this.buildRawFilters(filterKey, campaign, agent, excludeOutcomes);
@@ -389,6 +395,18 @@ export class InsightsSummaryService {
       .addSelect('COUNT(1)', 'total_count')
       .getRawOne<{ avg_score: number | null; min_score: number | null; max_score: number | null; scored_count: string; total_count: string }>();
 
+    // QA overall-score stats (from qa_assessment.overall_score inside qa_scores_json)
+    const qaScoreStats = await this.applyFilters(baseQb(), filterKey, campaign, agent, excludeOutcomes)
+      .select("AVG(CAST(JSON_VALUE(ii.qa_scores_json, '$.overall_score') AS FLOAT))", 'avg_score')
+      .addSelect("MIN(CAST(JSON_VALUE(ii.qa_scores_json, '$.overall_score') AS FLOAT))", 'min_score')
+      .addSelect("MAX(CAST(JSON_VALUE(ii.qa_scores_json, '$.overall_score') AS FLOAT))", 'max_score')
+      .addSelect(
+        "SUM(CASE WHEN JSON_VALUE(ii.qa_scores_json, '$.overall_score') IS NOT NULL THEN 1 ELSE 0 END)",
+        'scored_count',
+      )
+      .andWhere('ii.qa_scores_json IS NOT NULL')
+      .getRawOne<{ avg_score: number | null; min_score: number | null; max_score: number | null; scored_count: string }>();
+
     const scoreBuckets = await this.applyFilters(baseQb(), filterKey, campaign, agent, excludeOutcomes)
       .select(
         `CASE WHEN ii.overall_score < 5 THEN 'below_5' WHEN ii.overall_score < 7 THEN '5_to_7' WHEN ii.overall_score < 9 THEN '7_to_9' ELSE '9_plus' END`,
@@ -399,7 +417,26 @@ export class InsightsSummaryService {
       .groupBy(`CASE WHEN ii.overall_score < 5 THEN 'below_5' WHEN ii.overall_score < 7 THEN '5_to_7' WHEN ii.overall_score < 9 THEN '7_to_9' ELSE '9_plus' END`)
       .getRawMany<{ bucket: string; count: string }>();
 
-    // Per-dimension averages using JSON_VALUE (calls + chats)
+    // Per-dimension averages using JSON_VALUE (calls + chats).
+    // Partial-exclusion check falls back to reading scoring_flags from the raw
+    // LLM JSON so it still works for records that predate the indexed bit column.
+    // ISJSON guard skips rows whose raw JSON is malformed (e.g. legacy rows
+    // stored with markdown fences) — those records are treated as "not partial"
+    // rather than erroring the whole query.
+    const partialClause = excludePartial
+      ? `AND (
+          ii.operations_partial_scoring = 0
+          OR (
+            ii.operations_partial_scoring IS NULL
+            AND (
+              ii.json IS NULL
+              OR ISJSON(ii.json) = 0
+              OR JSON_VALUE(ii.json, '$.operations.scoring_flags.partial_scoring') IS NULL
+              OR JSON_VALUE(ii.json, '$.operations.scoring_flags.partial_scoring') <> 'true'
+            )
+          )
+        )`
+      : '';
     const dimScores = await this.insightsRepo.manager.query<Array<Record<string, number | null>>>(
       `SELECT
         -- Call dimensions
@@ -429,9 +466,84 @@ export class InsightsSummaryService {
       INNER JOIN app.interactions ia ON ia.id = ii.recordingId
       WHERE ii.operations_scores_json IS NOT NULL
         AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0 AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
-        ${filterClause}`,
+        ${filterClause}
+        ${partialClause}`,
       [from, to, ...extraParams],
     );
+
+    // Helper — a SQL fragment that evaluates to true for rows where the given
+    // flag (column + JSON fallback) is set. `flagColumn` is the bit column
+    // name, `jsonPath` is the JSON_VALUE path.
+    const flagIsTrueSql = (flagColumn: string, jsonPath: string) => `(
+      ii.${flagColumn} = 1
+      OR (
+        ii.${flagColumn} IS NULL
+        AND ISJSON(ii.json) = 1
+        AND JSON_VALUE(ii.json, '${jsonPath}') = 'true'
+      )
+    )`;
+
+    // Partial scores grouped by outcome — one aggregation per layer.
+    const partialByOutcomeOps = await this.applyFilters(baseQb(), filterKey, campaign, agent, excludeOutcomes)
+      .select("COALESCE(ia.outcome, 'unknown')", 'outcome')
+      .addSelect('COUNT(1)', 'count')
+      .andWhere(flagIsTrueSql('operations_partial_scoring', '$.operations.scoring_flags.partial_scoring'))
+      .groupBy("COALESCE(ia.outcome, 'unknown')")
+      .orderBy('count', 'DESC')
+      .getRawMany<{ outcome: string; count: string }>();
+
+    const partialByOutcomeQa = await this.applyFilters(baseQb(), filterKey, campaign, agent, excludeOutcomes)
+      .select("COALESCE(ia.outcome, 'unknown')", 'outcome')
+      .addSelect('COUNT(1)', 'count')
+      .andWhere(flagIsTrueSql('qa_partial_scoring', '$.qa_assessment.scoring_flags.partial_scoring'))
+      .groupBy("COALESCE(ia.outcome, 'unknown')")
+      .orderBy('count', 'DESC')
+      .getRawMany<{ outcome: string; count: string }>();
+
+    // Low-score alerts grouped by agent — one aggregation per layer. Null or
+    // empty agents bucketed as "unknown".
+    const lowScoreByAgentOps = await this.applyFilters(baseQb(), filterKey, campaign, agent, excludeOutcomes)
+      .select("COALESCE(NULLIF(ia.agent, ''), 'unknown')", 'agent')
+      .addSelect('COUNT(1)', 'count')
+      .addSelect('AVG(ii.overall_score)', 'avg_score')
+      .andWhere(flagIsTrueSql('operations_low_score_alert', '$.operations.scoring_flags.low_score_alert'))
+      .groupBy("COALESCE(NULLIF(ia.agent, ''), 'unknown')")
+      .orderBy('count', 'DESC')
+      .getRawMany<{ agent: string; count: string; avg_score: number | null }>();
+
+    const lowScoreByAgentQa = await this.applyFilters(baseQb(), filterKey, campaign, agent, excludeOutcomes)
+      .select("COALESCE(NULLIF(ia.agent, ''), 'unknown')", 'agent')
+      .addSelect('COUNT(1)', 'count')
+      .addSelect('AVG(ii.overall_score)', 'avg_score')
+      .andWhere(flagIsTrueSql('qa_low_score_alert', '$.qa_assessment.scoring_flags.low_score_alert'))
+      .groupBy("COALESCE(NULLIF(ia.agent, ''), 'unknown')")
+      .orderBy('count', 'DESC')
+      .getRawMany<{ agent: string; count: string; avg_score: number | null }>();
+
+    // Flag counts — split by layer (operations vs QA) to avoid visual overlap
+    const flagCounts = await this.applyFilters(baseQb(), filterKey, campaign, agent, excludeOutcomes)
+      .select(
+        'SUM(CASE WHEN ii.operations_partial_scoring = 1 THEN 1 ELSE 0 END)',
+        'ops_partial_count',
+      )
+      .addSelect(
+        'SUM(CASE WHEN ii.operations_low_score_alert = 1 THEN 1 ELSE 0 END)',
+        'ops_low_score_count',
+      )
+      .addSelect(
+        'SUM(CASE WHEN ii.qa_partial_scoring = 1 THEN 1 ELSE 0 END)',
+        'qa_partial_count',
+      )
+      .addSelect(
+        'SUM(CASE WHEN ii.qa_low_score_alert = 1 THEN 1 ELSE 0 END)',
+        'qa_low_score_count',
+      )
+      .getRawOne<{
+        ops_partial_count: string | null;
+        ops_low_score_count: string | null;
+        qa_partial_count: string | null;
+        qa_low_score_count: string | null;
+      }>();
 
     // Top coaching needs via OPENJSON — normalise text (lowercase, trim, strip trailing punctuation)
     // then merge similar entries in TS
@@ -492,6 +604,12 @@ export class InsightsSummaryService {
         scored_count: parseInt(scoreStats?.scored_count ?? '0', 10),
         total_count: parseInt(scoreStats?.total_count ?? '0', 10),
       },
+      qa_score_stats: {
+        avg_score: qaScoreStats?.avg_score ?? null,
+        min_score: qaScoreStats?.min_score ?? null,
+        max_score: qaScoreStats?.max_score ?? null,
+        scored_count: parseInt(qaScoreStats?.scored_count ?? '0', 10),
+      },
       score_distribution: scoreBuckets.map((r) => ({
         bucket: r.bucket,
         count: parseInt(r.count, 10),
@@ -502,6 +620,31 @@ export class InsightsSummaryService {
         avg_score: r.avg_score ?? null,
       })),
       dimension_averages: dimScores[0] ?? {},
+      dimension_averages_exclude_partial: excludePartial,
+      scoring_flags: {
+        ops_partial_count: parseInt(flagCounts?.ops_partial_count ?? '0', 10),
+        ops_low_score_count: parseInt(flagCounts?.ops_low_score_count ?? '0', 10),
+        qa_partial_count: parseInt(flagCounts?.qa_partial_count ?? '0', 10),
+        qa_low_score_count: parseInt(flagCounts?.qa_low_score_count ?? '0', 10),
+      },
+      partial_by_outcome_ops: partialByOutcomeOps.map((r) => ({
+        outcome: r.outcome,
+        count: parseInt(r.count, 10),
+      })),
+      partial_by_outcome_qa: partialByOutcomeQa.map((r) => ({
+        outcome: r.outcome,
+        count: parseInt(r.count, 10),
+      })),
+      low_score_by_agent_ops: lowScoreByAgentOps.map((r) => ({
+        agent: r.agent,
+        count: parseInt(r.count, 10),
+        avg_score: r.avg_score ?? null,
+      })),
+      low_score_by_agent_qa: lowScoreByAgentQa.map((r) => ({
+        agent: r.agent,
+        count: parseInt(r.count, 10),
+        avg_score: r.avg_score ?? null,
+      })),
       top_coaching_needs: topCoachingNeeds,
       lowest_scored: lowestScored.map((r) => ({
         ...r,
@@ -1233,6 +1376,7 @@ ${prompt}
     AVG(CAST(JSON_VALUE(ii.qa_scores_json, '$.scores.right_outcome.section_score') AS FLOAT)) AS right_outcome_score,
     -- Overall
     AVG(ii.overall_score) AS overall_score,
+    AVG(CAST(JSON_VALUE(ii.qa_scores_json, '$.overall_score') AS FLOAT)) AS qa_overall_score,
     COUNT(1) AS count
   FROM app.interaction_insights ii
   INNER JOIN app.interactions ia ON ia.id = ii.recordingId
@@ -1241,17 +1385,50 @@ ${prompt}
 
   async getOpsDimensionComparison(
     from: Date, to: Date, filterKey: InteractionFilter = 'calls', campaign?: string, agent?: string, excludeOutcomes?: string[],
+    excludePartial = false,
   ) {
+    // Partial-exclusion clauses: fall back to JSON_VALUE on the raw `json` blob
+    // so the filter still bites on records that predate the indexed bit column.
+    // ISJSON guard keeps malformed legacy rows from breaking the query.
+    const opsPartialClause = excludePartial
+      ? `AND (
+          ii.operations_partial_scoring = 0
+          OR (
+            ii.operations_partial_scoring IS NULL
+            AND (
+              ii.json IS NULL
+              OR ISJSON(ii.json) = 0
+              OR JSON_VALUE(ii.json, '$.operations.scoring_flags.partial_scoring') IS NULL
+              OR JSON_VALUE(ii.json, '$.operations.scoring_flags.partial_scoring') <> 'true'
+            )
+          )
+        )`
+      : '';
+    const qaPartialClause = excludePartial
+      ? `AND (
+          ii.qa_partial_scoring = 0
+          OR (
+            ii.qa_partial_scoring IS NULL
+            AND (
+              ii.json IS NULL
+              OR ISJSON(ii.json) = 0
+              OR JSON_VALUE(ii.json, '$.qa_assessment.scoring_flags.partial_scoring') IS NULL
+              OR JSON_VALUE(ii.json, '$.qa_assessment.scoring_flags.partial_scoring') <> 'true'
+            )
+          )
+        )`
+      : '';
+
     // Overall averages (no agent filter)
     const { clause: overallClause, extraParams: overallParams } = this.buildRawFilters(filterKey, campaign, undefined, excludeOutcomes);
     const overall = await this.insightsRepo.manager.query<Array<Record<string, number | null>>>(
-      `${this.dimensionAvgSql} ${overallClause}`,
+      `${this.dimensionAvgSql} ${overallClause} ${opsPartialClause}`,
       [from, to, ...overallParams],
     );
 
     // RAC QA averages (overall, no agent filter)
     const qaOverall = await this.insightsRepo.manager.query<Array<Record<string, number | null>>>(
-      `${this.qaAvgSql} ${overallClause}`,
+      `${this.qaAvgSql} ${overallClause} ${qaPartialClause}`,
       [from, to, ...overallParams],
     );
 
@@ -1274,13 +1451,13 @@ ${prompt}
     if (agent) {
       const { clause: agentClause, extraParams: agentParams } = this.buildRawFilters(filterKey, campaign, agent, excludeOutcomes);
       const agentResult = await this.insightsRepo.manager.query<Array<Record<string, number | null>>>(
-        `${this.dimensionAvgSql} ${agentClause}`,
+        `${this.dimensionAvgSql} ${agentClause} ${opsPartialClause}`,
         [from, to, ...agentParams],
       );
       agentData = agentResult[0] ?? null;
 
       const qaAgentResult = await this.insightsRepo.manager.query<Array<Record<string, number | null>>>(
-        `${this.qaAvgSql} ${agentClause}`,
+        `${this.qaAvgSql} ${agentClause} ${qaPartialClause}`,
         [from, to, ...agentParams],
       );
       qaAgentData = qaAgentResult[0] ?? null;
@@ -1402,6 +1579,116 @@ ${prompt}
        ORDER BY ii.overall_score ASC
        OFFSET @${isUnknown ? paramOffset : paramOffset + 1} ROWS FETCH NEXT @${isUnknown ? paramOffset + 1 : paramOffset + 2} ROWS ONLY`,
       [from, to, ...extraParams, ...(isUnknown ? [offset, limit] : [outcome, offset, limit])],
+    );
+
+    return rows.map((r: any) => ({
+      ...r,
+      coaching_json: r.coaching_json ? safeParseJson(r.coaching_json) : null,
+    }));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // OPS: INTERACTIONS WITH PARTIAL SCORE FLAG, GROUPED BY OUTCOME
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  async getInteractionsByPartialScoreOutcome(
+    from: Date, to: Date, filterKey: InteractionFilter = 'calls',
+    outcome: string, limit = 200, offset = 0, campaign?: string, agent?: string, excludeOutcomes?: string[],
+    layer: 'ops' | 'qa' = 'ops',
+  ) {
+    const { clause: filterClause, extraParams } = this.buildRawFilters(filterKey, campaign, agent, excludeOutcomes);
+    const paramOffset = 2 + extraParams.length;
+
+    const isUnknown = outcome === 'unknown';
+    const outcomeCondition = isUnknown
+      ? `(ia.outcome IS NULL OR ia.outcome = '')`
+      : `ia.outcome = @${paramOffset}`;
+
+    const flagColumn = layer === 'qa' ? 'qa_partial_scoring' : 'operations_partial_scoring';
+    const jsonPath = layer === 'qa'
+      ? '$.qa_assessment.scoring_flags.partial_scoring'
+      : '$.operations.scoring_flags.partial_scoring';
+
+    const partialFlagCondition = `(
+      ii.${flagColumn} = 1
+      OR (
+        ii.${flagColumn} IS NULL
+        AND ISJSON(ii.json) = 1
+        AND JSON_VALUE(ii.json, '${jsonPath}') = 'true'
+      )
+    )`;
+
+    const offsetIdx = isUnknown ? paramOffset : paramOffset + 1;
+    const limitIdx = isUnknown ? paramOffset + 1 : paramOffset + 2;
+
+    const rows = await this.insightsRepo.manager.query(
+      `SELECT ii.recordingId, ii.summary_short, ii.overall_score, ii.contact_disposition,
+              ii.campaign_detected, ii.sentiment_overall, ii.coaching_json,
+              ia.agent, ia.interactionDateTime, ia.campaign, ia.outcome
+       FROM app.interaction_insights ii
+       INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+       WHERE ${outcomeCondition}
+         AND ${partialFlagCondition}
+         AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0 AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
+         ${filterClause}
+       ORDER BY COALESCE(ia.interactionDateTime, ia.createdAt) DESC
+       OFFSET @${offsetIdx} ROWS FETCH NEXT @${limitIdx} ROWS ONLY`,
+      [from, to, ...extraParams, ...(isUnknown ? [offset, limit] : [outcome, offset, limit])],
+    );
+
+    return rows.map((r: any) => ({
+      ...r,
+      coaching_json: r.coaching_json ? safeParseJson(r.coaching_json) : null,
+    }));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // OPS: INTERACTIONS WITH LOW-SCORE ALERT, GROUPED BY AGENT
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  async getInteractionsByLowScoreAlertAgent(
+    from: Date, to: Date, filterKey: InteractionFilter = 'calls',
+    targetAgent: string, limit = 200, offset = 0, campaign?: string, agent?: string, excludeOutcomes?: string[],
+    layer: 'ops' | 'qa' = 'ops',
+  ) {
+    const { clause: filterClause, extraParams } = this.buildRawFilters(filterKey, campaign, agent, excludeOutcomes);
+    const paramOffset = 2 + extraParams.length;
+
+    const isUnknown = targetAgent === 'unknown';
+    const agentCondition = isUnknown
+      ? `(ia.agent IS NULL OR ia.agent = '')`
+      : `ia.agent = @${paramOffset}`;
+
+    const flagColumn = layer === 'qa' ? 'qa_low_score_alert' : 'operations_low_score_alert';
+    const jsonPath = layer === 'qa'
+      ? '$.qa_assessment.scoring_flags.low_score_alert'
+      : '$.operations.scoring_flags.low_score_alert';
+
+    const lowScoreFlagCondition = `(
+      ii.${flagColumn} = 1
+      OR (
+        ii.${flagColumn} IS NULL
+        AND ISJSON(ii.json) = 1
+        AND JSON_VALUE(ii.json, '${jsonPath}') = 'true'
+      )
+    )`;
+
+    const offsetIdx = isUnknown ? paramOffset : paramOffset + 1;
+    const limitIdx = isUnknown ? paramOffset + 1 : paramOffset + 2;
+
+    const rows = await this.insightsRepo.manager.query(
+      `SELECT ii.recordingId, ii.summary_short, ii.overall_score, ii.contact_disposition,
+              ii.campaign_detected, ii.sentiment_overall, ii.coaching_json,
+              ia.agent, ia.interactionDateTime, ia.campaign, ia.outcome
+       FROM app.interaction_insights ii
+       INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+       WHERE ${agentCondition}
+         AND ${lowScoreFlagCondition}
+         AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0 AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
+         ${filterClause}
+       ORDER BY ii.overall_score ASC
+       OFFSET @${offsetIdx} ROWS FETCH NEXT @${limitIdx} ROWS ONLY`,
+      [from, to, ...extraParams, ...(isUnknown ? [offset, limit] : [targetAgent, offset, limit])],
     );
 
     return rows.map((r: any) => ({
@@ -1568,6 +1855,56 @@ ${prompt}
   // OPS: SINGLE INTERACTION DETAIL
   // ─────────────────────────────────────────────────────────────────────────────
 
+  async searchInteractions(rawQuery: string, limit = 10) {
+    const query = (rawQuery ?? '').trim();
+    if (query.length < 3) return [];
+
+    const like = `%${query}%`;
+    const rows = await this.recordingsRepo
+      .createQueryBuilder('i')
+      .leftJoin(InteractionInsight, 'ins', 'ins.recordingId = i.id')
+      .select([
+        'i.id AS id',
+        'i.interactionId AS interactionId',
+        'i.interactionTpsId AS interactionTpsId',
+        'i.interactionType AS interactionType',
+        'i.campaign AS campaign',
+        'i.agent AS agent',
+        'i.interactionDateTime AS interactionDateTime',
+        'i.outcome AS outcome',
+        'ins.summary_short AS summaryShort',
+      ])
+      .where('i.interactionId LIKE :q OR i.interactionTpsId LIKE :q', { q: like })
+      .orderBy('i.interactionDateTime', 'DESC')
+      .limit(Math.max(1, Math.min(limit, 25)))
+      .getRawMany<{
+        id: string;
+        interactionId: string | null;
+        interactionTpsId: string | null;
+        interactionType: string | null;
+        campaign: string | null;
+        agent: string | null;
+        interactionDateTime: Date | string | null;
+        outcome: string | null;
+        summaryShort: string | null;
+      }>();
+
+    return rows.map((r) => ({
+      id: r.id,
+      interactionId: r.interactionId,
+      interactionTpsId: r.interactionTpsId,
+      interactionType: r.interactionType,
+      campaign: r.campaign,
+      agent: r.agent,
+      interactionDateTime:
+        r.interactionDateTime instanceof Date
+          ? r.interactionDateTime.toISOString()
+          : r.interactionDateTime ?? null,
+      outcome: r.outcome,
+      summaryShort: r.summaryShort,
+    }));
+  }
+
   async getInteractionDetail(recordingId: string) {
     const interaction = await this.recordingsRepo.findOne({ where: { id: recordingId } });
     if (!interaction) return null;
@@ -1591,30 +1928,38 @@ ${prompt}
         outcome: interaction.outcome,
       },
       transcript: transcript ? { text: transcript.text, model: transcript.model } : null,
-      insight: insight ? {
-        summary_short: insight.summary_short,
-        summary_detailed: insight.summary_detailed,
-        sentiment_overall: insight.sentiment_overall,
-        overall_score: insight.overall_score,
-        contact_disposition: insight.contact_disposition,
-        conversation_type: insight.conversation_type,
-        interest_level: insight.interest_level,
-        campaign_detected: insight.campaign_detected,
-        decision_timeline: insight.decision_timeline,
-        next_step_agreed: insight.next_step_agreed,
-        operations_scores: insight.operations_scores_json ? safeParseJson(insight.operations_scores_json) : null,
-        qa_scores: insight.qa_scores_json ? safeParseJson(insight.qa_scores_json) : null,
-        coaching: insight.coaching_json ? safeParseJson(insight.coaching_json) : null,
-        objections: insight.objections_json ? safeParseJson(insight.objections_json) : null,
-        objection_assessment: insight.objection_assessments_json ? safeParseJson(insight.objection_assessments_json) : null,
-        action_items: insight.action_items_json ? safeParseJson(insight.action_items_json) : null,
-        risk_flags: insight.risk_flags_json ? safeParseJson(insight.risk_flags_json) : null,
-        opportunity: {
-          is_opportunity: insight.is_opportunity,
-          not_opportunity_reason: insight.not_opportunity_reason,
-          detail: insight.opportunity_json ? safeParseJson(insight.opportunity_json) : null,
-        },
-      } : null,
+      insight: insight ? (() => {
+        // Extract operations.scoring_flags from the raw LLM JSON — not stored
+        // in operations_scores_json, but lives inside the full `json` blob.
+        const raw = insight.json ? safeParseJson(insight.json) : null;
+        const operationsFlags = raw?.operations?.scoring_flags ?? null;
+
+        return {
+          summary_short: insight.summary_short,
+          summary_detailed: insight.summary_detailed,
+          sentiment_overall: insight.sentiment_overall,
+          overall_score: insight.overall_score,
+          contact_disposition: insight.contact_disposition,
+          conversation_type: insight.conversation_type,
+          interest_level: insight.interest_level,
+          campaign_detected: insight.campaign_detected,
+          decision_timeline: insight.decision_timeline,
+          next_step_agreed: insight.next_step_agreed,
+          operations_scores: insight.operations_scores_json ? safeParseJson(insight.operations_scores_json) : null,
+          operations_flags: operationsFlags,
+          qa_scores: insight.qa_scores_json ? safeParseJson(insight.qa_scores_json) : null,
+          coaching: insight.coaching_json ? safeParseJson(insight.coaching_json) : null,
+          objections: insight.objections_json ? safeParseJson(insight.objections_json) : null,
+          objection_assessment: insight.objection_assessments_json ? safeParseJson(insight.objection_assessments_json) : null,
+          action_items: insight.action_items_json ? safeParseJson(insight.action_items_json) : null,
+          risk_flags: insight.risk_flags_json ? safeParseJson(insight.risk_flags_json) : null,
+          opportunity: {
+            is_opportunity: insight.is_opportunity,
+            not_opportunity_reason: insight.not_opportunity_reason,
+            detail: insight.opportunity_json ? safeParseJson(insight.opportunity_json) : null,
+          },
+        };
+      })() : null,
     };
   }
 

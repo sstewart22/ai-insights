@@ -12,12 +12,15 @@ import { Interaction } from '../db/entities/interaction.entity';
 import { InteractionTranscript } from '../db/entities/interaction-transcript.entity';
 import { InsightSummary } from '../db/entities/insight-summary.entity';
 import { SurveyResponse } from '../db/entities/survey-response.entity';
+import { PromptsModule } from '../modules/prompts/prompts.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([InteractionInsight, Interaction, InteractionTranscript, InsightSummary, SurveyResponse]),
+    PromptsModule,
   ],
   controllers: [InsightsController, SurveyAnalyticsController],
   providers: [InsightsService, InsightsSummaryService, SurveyAnalyticsService],
+  exports: [InsightsService],
 })
 export class InsightsModule {}

@@ -8,6 +8,7 @@ import { InsightsModule } from './insights/insights.module';
 import { RecordingsModule } from './recordings/recordings.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
+import { PromptsModule } from './modules/prompts/prompts.module';
 
 import { Interaction } from './db/entities/interaction.entity';
 import { InteractionTranscript } from './db/entities/interaction-transcript.entity';
@@ -16,6 +17,8 @@ import { InsightSummary } from './db/entities/insight-summary.entity';
 import { UserAccount } from './db/entities/user-account.entity';
 import { BatchJob } from './db/entities/batch-job.entity';
 import { SurveyResponse } from './db/entities/survey-response.entity';
+import { PromptTemplate } from './db/entities/prompt-template.entity';
+import { PromptTemplateHistory } from './db/entities/prompt-template-history.entity';
 
 @Module({
   imports: [
@@ -39,6 +42,8 @@ import { SurveyResponse } from './db/entities/survey-response.entity';
             UserAccount,
             BatchJob,
             SurveyResponse,
+            PromptTemplate,
+            PromptTemplateHistory,
           ],
           synchronize: false,
           logging: false,
@@ -56,6 +61,7 @@ import { SurveyResponse } from './db/entities/survey-response.entity';
 
     AuthModule,
     UserModule,
+    PromptsModule,
     TranscriptionModule,
     InsightsModule,
     RecordingsModule,

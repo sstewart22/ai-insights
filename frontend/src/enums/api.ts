@@ -20,6 +20,8 @@ export const ApiPath = {
   OpsInteractionsByInterestLevel: "/uiapi/insights/ops/interactions-by-interest-level",
   OpsInteractionsByCompetitor: "/uiapi/insights/ops/interactions-by-competitor",
   OpsInteractionsByObjectionCategory: "/uiapi/insights/ops/interactions-by-objection-category",
+  OpsInteractionsByPartialOutcome: "/uiapi/insights/ops/interactions-by-partial-outcome",
+  OpsInteractionsByLowScoreAgent: "/uiapi/insights/ops/interactions-by-low-score-agent",
   OpsOpportunity: "/uiapi/insights/ops/opportunity",
   OpsInteractionsByOpportunityReason: "/uiapi/insights/ops/interactions-by-opportunity-reason",
   OpsInteractionDetail: "/uiapi/insights/ops/interaction-detail",

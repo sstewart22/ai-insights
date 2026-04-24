@@ -31,6 +31,7 @@
             </div>
           </div>
           <div class="app-topbar-right">
+            <GlobalRecordSearch />
             <div class="app-user" v-if="user">
               <div class="app-user-name">{{ user.name || user.email }}</div>
             </div>
@@ -62,6 +63,7 @@
           <button class="tab" :class="{ 'tab--active': tab === 'clientservices' }" @click="tab = 'clientservices'">Client Services</button>
           <button class="tab" :class="{ 'tab--active': tab === 'survey' }" @click="tab = 'survey'">Survey Analytics</button>
           <button class="tab" :class="{ 'tab--active': tab === 'narratives' }" @click="tab = 'narratives'">Narratives</button>
+          <button v-if="canSeeAdminTools" class="tab" :class="{ 'tab--active': tab === 'prompts' }" @click="tab = 'prompts'">Prompts</button>
         </nav>
       </div>
 
@@ -75,6 +77,7 @@
           <ClientServicesDashboard v-else-if="tab === 'clientservices'" />
           <SurveyDashboard v-else-if="tab === 'survey'" />
           <NarrativesPage v-else-if="tab === 'narratives'" />
+          <PromptsAdmin v-else-if="tab === 'prompts'" />
           <SettingsPanel v-else />
         </keep-alive>
       </div>
@@ -92,6 +95,8 @@ import OperationsDashboard from "./components/OperationsDashboard.vue";
 import ClientServicesDashboard from "./components/ClientServicesDashboard.vue";
 import SurveyDashboard from "./components/SurveyDashboard.vue";
 import NarrativesPage from "./components/NarrativesPage.vue";
+import PromptsAdmin from "./components/PromptsAdmin.vue";
+import GlobalRecordSearch from "./components/GlobalRecordSearch.vue";
 import LoginPanel from "./components/auth/LoginPanel.vue";
 import TwoFactorPanel from "./components/auth/TwoFactorPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
@@ -102,7 +107,7 @@ import logoUrl from "./assets/ai-icon.png";
 const { canSeeAdminTools, canSeeDevTools } = useAccess();
 const canSeeFullUI = computed(() => canSeeDevTools.value || canSeeAdminTools.value);
 
-const tab = ref<"test" | "data" | "batch" | "summary" | "ops" | "clientservices" | "survey" | "narratives" | "settings">("ops");
+const tab = ref<"test" | "data" | "batch" | "summary" | "ops" | "clientservices" | "survey" | "narratives" | "prompts" | "settings">("ops");
 const dpOpen = ref(false);
 const dpRef = ref<HTMLElement | null>(null);
 const isDataProcessingTab = computed(() => ["test", "data", "batch"].includes(tab.value));
@@ -219,6 +224,10 @@ function handleLogout() {
   height: 36px;
   object-fit: contain;
   filter: brightness(0) invert(1);
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
 }
 
 .app-title {

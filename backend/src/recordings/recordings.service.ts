@@ -15,7 +15,7 @@ import { InteractionInsight } from '../db/entities/interaction-insight.entity';
 import { BatchJob } from '../db/entities/batch-job.entity';
 
 import { TranscriptionDeepgramService } from '../transcription/transcriptionDeepgram.service';
-import { InsightsService } from '../insights/insights.service';
+import { InsightsService, cleanJsonText } from '../insights/insights.service';
 import { InsightsProviderName } from '../insights/types/insights-provider.type';
 
 function sniffAudioExt(buf: Buffer): 'wav' | 'mp3' | 'mp4' | 'unknown' {
@@ -304,7 +304,7 @@ export class RecordingsService {
           recordingId,
           providerUsed,
           model,
-          json: rawJsonText,
+          json: cleanJsonText(rawJsonText),
           extractorVersion: 'v3',
 
           // Shared scalars
@@ -330,6 +330,14 @@ export class RecordingsService {
               : null,
           operations_scores_json: JSON.stringify(parsed.operations?.scores ?? {}),
           coaching_json: JSON.stringify(parsed.operations?.coaching ?? {}),
+          operations_partial_scoring:
+            typeof parsed.operations?.scoring_flags?.partial_scoring === 'boolean'
+              ? parsed.operations.scoring_flags.partial_scoring
+              : null,
+          operations_low_score_alert:
+            typeof parsed.operations?.scoring_flags?.low_score_alert === 'boolean'
+              ? parsed.operations.scoring_flags.low_score_alert
+              : null,
 
           // Call-specific
           campaign_detected: parsed.campaign_detected ?? null,
@@ -350,6 +358,14 @@ export class RecordingsService {
           qa_scores_json: parsed.qa_assessment
             ? JSON.stringify(parsed.qa_assessment)
             : null,
+          qa_partial_scoring:
+            typeof parsed.qa_assessment?.scoring_flags?.partial_scoring === 'boolean'
+              ? parsed.qa_assessment.scoring_flags.partial_scoring
+              : null,
+          qa_low_score_alert:
+            typeof parsed.qa_assessment?.scoring_flags?.low_score_alert === 'boolean'
+              ? parsed.qa_assessment.scoring_flags.low_score_alert
+              : null,
 
           // Objection handling assessment (campaign-specific)
           objection_assessments_json: parsed.objection_assessment

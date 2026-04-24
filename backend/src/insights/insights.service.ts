@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { createProvider } from './providers/provider.factory';
-import { buildCallInsightsPrompt, buildChatInsightsPrompt } from './prompt/build-insights-prompt';
+import { PromptsService } from '../modules/prompts/prompts.service';
 import { InsightsProviderName } from './types/insights-provider.type';
 
 // Shared sub-types
@@ -112,6 +112,12 @@ export type ExtractedInsights = {
     scores: Record<string, ScoreDimension | null>;
     overall_score: number;
     coaching: Coaching;
+    scoring_flags?: {
+      partial_scoring: boolean;
+      partial_scoring_reason: string | null;
+      low_score_alert: boolean;
+      low_score_dimensions: string[];
+    };
   };
   qa_assessment?: any;                  // campaign-specific QA scoring (e.g. RAC Q1-Q15)
   objection_assessment?: ObjectionAssessment; // campaign-specific objection handling
@@ -122,7 +128,7 @@ export type ExtractedInsights = {
   data_quality: DataQuality;
 };
 
-function cleanJsonText(text: string): string {
+export function cleanJsonText(text: string): string {
   let cleaned = text.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, '');
@@ -133,6 +139,8 @@ function cleanJsonText(text: string): string {
 
 @Injectable()
 export class InsightsService {
+  constructor(private readonly promptsService: PromptsService) {}
+
   async extractInsights(
     transcript: string,
     interactionType: string | null,
@@ -146,8 +154,8 @@ export class InsightsService {
   }> {
     const isChat = interactionType === 'chat';
     const prompt = isChat
-      ? buildChatInsightsPrompt(transcript, campaign)
-      : buildCallInsightsPrompt(transcript, campaign);
+      ? await this.promptsService.composeChatPrompt(transcript, campaign)
+      : await this.promptsService.composeCallPrompt(transcript, campaign);
 
     const llmProvider = createProvider(provider);
     const result = await llmProvider.extract(prompt);

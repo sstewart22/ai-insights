@@ -82,6 +82,24 @@ export class InteractionInsight {
   @Column({ type: 'nvarchar', length: 'MAX', nullable: true })
   coaching_json!: string | null; // { did_well, needs_improvement, good_quotes, bad_quotes }
 
+  // Scoring flags — true when operations.scoring_flags surfaces a concern.
+  // Indexed for fast filter/count on the dashboards.
+  @Index()
+  @Column({ type: 'bit', nullable: true })
+  operations_partial_scoring!: boolean | null;
+
+  @Index()
+  @Column({ type: 'bit', nullable: true })
+  operations_low_score_alert!: boolean | null;
+
+  @Index()
+  @Column({ type: 'bit', nullable: true })
+  qa_partial_scoring!: boolean | null;
+
+  @Index()
+  @Column({ type: 'bit', nullable: true })
+  qa_low_score_alert!: boolean | null;
+
   // ── Call-specific ────────────────────────────────────────────────────────
 
   @Index()

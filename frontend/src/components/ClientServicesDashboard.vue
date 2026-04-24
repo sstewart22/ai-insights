@@ -3,6 +3,7 @@ import axios from "axios";
 import { computed, onMounted, ref, watch } from "vue";
 import { ApiPath } from "@/enums/api";
 import { toPrettyInsights } from "@/utils/insights-response";
+import InteractionDetailDrawer from "./InteractionDetailDrawer.vue";
 
 // ── Filters ──────────────────────────────────────────────────────────────────
 const campaignOptions = ref<string[]>([]);
@@ -106,61 +107,11 @@ const loadingOpportunityReason = ref(false);
 
 // Detail drawer
 const detailId = ref<string | null>(null);
-const detailData = ref<any>(null);
-const loadingDetail = ref(false);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
   if (!iso) return "n/a";
   return new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function fmtTime(ts: string) {
-  if (/^\d{2}:\d{2}:\d{2}$/.test(ts)) return ts.slice(0, 5);
-  const d = new Date(ts);
-  if (isNaN(d.getTime())) return ts;
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
-function fmtScore(v: number | null | undefined) {
-  if (typeof v !== "number" || v === null) return "n/a";
-  return v.toFixed(1);
-}
-
-function fmtQaScore(v: number | null | undefined) {
-  if (typeof v !== "number" || v === null) return "n/a";
-  return v.toFixed(2);
-}
-
-const SCORE_GREEN = "#059669";
-const SCORE_BLUE = "#0284c7";
-const SCORE_ORANGE = "#ea580c";
-const SCORE_RED = "#dc2626";
-
-function scoreColorSolid(v: number | null) {
-  if (typeof v !== "number") return "#ccc";
-  if (v >= 9) return SCORE_GREEN;
-  if (v >= 7) return SCORE_BLUE;
-  if (v >= 5) return SCORE_ORANGE;
-  return SCORE_RED;
-}
-
-function scoreColor(v: number | null) {
-  if (typeof v !== "number") return "#ccc";
-  let light: string, full: string;
-  if (v >= 9) { light = "#a7f3d0"; full = SCORE_GREEN; }
-  else if (v >= 7) { light = "#bae6fd"; full = SCORE_BLUE; }
-  else if (v >= 5) { light = "#fed7aa"; full = SCORE_ORANGE; }
-  else { light = "#fecaca"; full = SCORE_RED; }
-  return `linear-gradient(90deg, ${light}, ${full})`;
-}
-
-function scoreChip(_v: number | null) {
-  if (typeof _v !== "number") return "chip chip--secondary";
-  if (_v >= 9) return "chip bucket-chip--9plus";
-  if (_v >= 7) return "chip bucket-chip--7to9";
-  if (_v >= 5) return "chip bucket-chip--5to7";
-  return "chip bucket-chip--below5";
 }
 
 function badgeClass(level: string) {
@@ -184,78 +135,6 @@ function opportunityReasonLabel(r: string) {
   };
   return labels[r] || r.replace(/_/g, " ");
 }
-
-// QA labels for detail drawer
-const qaQuestionLabels: Record<string, string> = {
-  q1_polite_friendly: "Q1 Polite & Friendly",
-  q2_clear_understandable: "Q2 Clear & Understandable",
-  q3_accurate_info: "Q3 Accurate Info",
-  q4_next_steps_clear: "Q4 Next Steps Clear",
-  q5_polite_friendly: "Q5 Polite & Friendly",
-  q6_services_clear: "Q6 Services Clear",
-  q7_next_steps_clear: "Q7 Next Steps Clear",
-  q8_accurate_info: "Q8 Accurate Info",
-  q9_id_verification: "Q9 ID Verification",
-  q10_fair_not_misleading: "Q10 Fair & Not Misleading",
-  q11_needs_established: "Q11 Needs Established",
-  q12_best_interest: "Q12 Best Interest",
-  q13_vulnerability: "Q13 Vulnerability",
-  q14_brand_representation: "Q14 Brand Representation",
-  q15_eligible_products: "Q15 Eligible Products",
-};
-
-const isChat = computed(() => detailData.value?.interaction?.interactionType === "chat");
-
-interface ChatMessage {
-  id: number;
-  source: string;
-  sender: string;
-  timestamp: string;
-  content: string;
-}
-
-function parseLineChatFormat(text: string): ChatMessage[] {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return [];
-  const re = /^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-–]\s*([^:]+):\s*(.*)$/i;
-  const msgs: ChatMessage[] = [];
-  for (const line of lines) {
-    const m = re.exec(line);
-    if (m) {
-      const role = m[2]!.trim().toLowerCase();
-      const source = role === 'agent' ? 'Agent' : 'Customer';
-      const sender = role === 'agent' ? 'Agent' : m[2]!.trim();
-      msgs.push({ id: msgs.length, source, sender, timestamp: m[1]!, content: m[3] ?? '' });
-    } else if (msgs.length) {
-      // Continuation line — append to previous message
-      msgs[msgs.length - 1]!.content += ' ' + line;
-    } else {
-      return []; // first line doesn't match — not this format
-    }
-  }
-  return msgs;
-}
-
-const chatMessages = computed<ChatMessage[]>(() => {
-  if (!isChat.value || !detailData.value?.transcript?.text) return [];
-  let raw: string = detailData.value.transcript.text;
-  // Try JSON parse — could be an array of message objects or a JSON-encoded string
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length) {
-      return [...parsed].sort(
-        (a: ChatMessage, b: ChatMessage) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      );
-    }
-    // If JSON.parse returned a string, use the unescaped version for line parsing
-    if (typeof parsed === 'string') raw = parsed;
-  } catch { /* not JSON */ }
-  // Try line-based format: HH:MM:SS-role: message
-  const lineParsed = parseLineChatFormat(raw);
-  if (lineParsed.length) return lineParsed;
-  return [];
-});
-
 
 // ── API calls ────────────────────────────────────────────────────────────────
 async function loadFilterOptions() {
@@ -344,20 +223,12 @@ async function toggleOpportunityReason(reason: string) {
   finally { loadingOpportunityReason.value = false; }
 }
 
-async function openDetail(recordingId: string) {
+function openDetail(recordingId: string) {
   detailId.value = recordingId;
-  detailData.value = null;
-  loadingDetail.value = true;
-  try {
-    const res = await axios.get(`${ApiPath.OpsInteractionDetail}/${recordingId}`);
-    detailData.value = res.data;
-  } catch { detailData.value = null; }
-  finally { loadingDetail.value = false; }
 }
 
 function closeDetail() {
   detailId.value = null;
-  detailData.value = null;
 }
 
 function selectCampaign(campaignName: string) {
@@ -850,234 +721,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Detail drawer -->
-    <Teleport to="body">
-      <div v-if="detailId" class="drawer-backdrop" @click="closeDetail" />
-      <Transition name="drawer">
-        <div v-if="detailId" class="drawer">
-          <div class="drawer-header">
-            <div class="drawer-header-left">
-              <div class="drawer-title">Interaction Detail</div>
-              <div v-if="detailData" class="drawer-header-sub">
-                <span v-if="detailData.interaction?.agent">{{ detailData.interaction.agent }}</span>
-                <span v-if="detailData.interaction?.agent && detailData.interaction?.campaign" class="drawer-header-sep">/</span>
-                <span v-if="detailData.interaction?.campaign">{{ detailData.interaction.campaign }}</span>
-              </div>
-            </div>
-            <div class="drawer-header-right">
-              <span
-                v-if="detailData?.insight?.overall_score != null"
-                class="drawer-header-score"
-                :style="{ background: scoreColorSolid(detailData.insight.overall_score) }"
-              >{{ fmtScore(detailData.insight.overall_score) }}</span>
-              <button class="drawer-close" @click="closeDetail">&times;</button>
-            </div>
-          </div>
-          <div class="drawer-body">
-            <div v-if="loadingDetail" class="hint" style="padding: 24px">Loading detail...</div>
-            <div v-else-if="!detailData" class="hint" style="padding: 24px">Could not load detail.</div>
-            <template v-else>
-              <div class="drawer-columns">
-                <!-- LEFT COLUMN: metadata, scores, QA -->
-                <div class="drawer-col">
-                  <!-- Metadata -->
-                  <div class="drawer-section">
-                    <div class="drawer-section-title">Metadata</div>
-                    <div class="drawer-meta-grid">
-                      <div><span class="drawer-label">Agent</span><span class="drawer-value">{{ detailData.interaction.agent || "n/a" }}</span></div>
-                      <div><span class="drawer-label">Campaign</span><span class="drawer-value">{{ detailData.interaction.campaign || "n/a" }}</span></div>
-                      <div><span class="drawer-label">Type</span><span class="drawer-value">{{ detailData.interaction.interactionType || "n/a" }}</span></div>
-                      <div><span class="drawer-label">Date</span><span class="drawer-value">{{ fmtDate(detailData.interaction.interactionDateTime) }}</span></div>
-                      <div v-if="detailData.interaction.interactionId"><span class="drawer-label">Interaction ID</span><span class="drawer-value mono" style="font-size: 12px">{{ detailData.interaction.interactionId }}</span></div>
-                      <div v-if="detailData.interaction.interactionTpsId"><span class="drawer-label">TPS ID</span><span class="drawer-value mono" style="font-size: 12px">{{ detailData.interaction.interactionTpsId }}</span></div>
-                      <div v-if="detailData.interaction.interactionSource"><span class="drawer-label">Source</span><span class="drawer-value">{{ detailData.interaction.interactionSource }}</span></div>
-                      <div><span class="drawer-label">Status</span><span class="chip chip--secondary">{{ detailData.interaction.status }}</span></div>
-                      <div v-if="detailData.interaction.outcome"><span class="drawer-label">Outcome</span><span class="chip chip--secondary">{{ detailData.interaction.outcome }}</span></div>
-                    </div>
-                  </div>
-
-                  <!-- Scores -->
-                  <div v-if="detailData.insight" class="drawer-section">
-                    <div class="drawer-section-title">Scores</div>
-                    <div class="stats-strip" style="margin-bottom: 10px">
-                      <div class="stat">
-                        <div class="stat-label">Overall</div>
-                        <div class="stat-value" :class="scoreChip(detailData.insight.overall_score)">{{ fmtScore(detailData.insight.overall_score) }}</div>
-                      </div>
-                      <div class="stat">
-                        <div class="stat-label">Sentiment</div>
-                        <div class="stat-value">{{ fmtScore(detailData.insight.sentiment_overall) }}</div>
-                      </div>
-                      <div class="stat">
-                        <div class="stat-label">Disposition</div>
-                        <div class="stat-value chip chip--secondary" style="font-size: 12px">{{ detailData.insight.contact_disposition || "n/a" }}</div>
-                      </div>
-                    </div>
-
-                    <!-- Standard dimension scores -->
-                    <div v-if="detailData.insight.operations_scores" style="margin-top: 8px">
-                      <div
-                        v-for="(dim, key) in detailData.insight.operations_scores"
-                        :key="key"
-                        class="dim-row"
-                        style="margin-bottom: 6px"
-                      >
-                        <div class="dim-label" style="min-width: 130px">{{ String(key).replace(/_/g, ' ') }}</div>
-                        <div class="dim-bars" style="flex: 1">
-                          <div class="dim-bar-track">
-                            <div class="dim-bar" :style="{ width: (dim?.score ?? 0) / 10 * 100 + '%', background: scoreColor(dim?.score ?? null) }" />
-                          </div>
-                        </div>
-                        <span class="dim-chip" :style="{ background: scoreColorSolid(dim?.score ?? null), color: '#fff', fontSize: '11px', minWidth: '36px', textAlign: 'center' }">{{ fmtScore(dim?.score ?? null) }}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- QA Assessment -->
-                  <div v-if="detailData.insight?.qa_scores?.scores" class="drawer-section">
-                    <div class="drawer-section-title">QA Assessment</div>
-                    <!-- QA overall score -->
-                    <div v-if="detailData.insight.qa_scores.overall_score != null" style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px">
-                      <span style="font-size: 12px; font-weight: 700; color: var(--ink)">Overall QA Score</span>
-                      <span
-                        class="dim-chip"
-                        :style="{ background: scoreColorSolid(detailData.insight.qa_scores.overall_score), color: '#fff', fontSize: '11px', minWidth: '42px', textAlign: 'center' }"
-                      >{{ fmtQaScore(detailData.insight.qa_scores.overall_score) }}</span>
-                    </div>
-                    <template v-for="(section, sectionKey) in detailData.insight.qa_scores.scores" :key="sectionKey">
-                      <div v-if="typeof section === 'object' && section !== null && 'section_score' in section" class="qa-section">
-                        <div class="qa-section-header">
-                          <span class="qa-section-title">{{ String(sectionKey).replace(/_/g, ' ') }}</span>
-                          <span
-                            class="dim-chip"
-                            :style="{ background: scoreColorSolid(section.section_score), color: '#fff', fontSize: '11px', minWidth: '42px', textAlign: 'center' }"
-                          >{{ fmtQaScore(section.section_score) }}</span>
-                        </div>
-                        <div v-for="(q, qKey) in section" :key="qKey" class="qa-row">
-                          <template v-if="typeof q === 'object' && q !== null && 'answer' in q">
-                            <div class="qa-label">{{ qaQuestionLabels[String(qKey)] || String(qKey).replace(/_/g, ' ') }}</div>
-                            <span
-                              class="chip"
-                              :class="q.answer === 'yes' ? 'chip--success' : q.answer === 'no' ? 'chip--danger' : 'chip--secondary'"
-                              style="font-size: 11px"
-                            >{{ q.answer }}</span>
-                            <div class="qa-rationale">{{ q.rationale }}</div>
-                          </template>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-
-                <!-- MIDDLE COLUMN: summary, coaching, action items, objections -->
-                <div class="drawer-col">
-                  <!-- Summary -->
-                  <div v-if="detailData.insight" class="drawer-section">
-                    <div class="drawer-section-title">Summary</div>
-                    <p style="margin: 0 0 8px; font-weight: 600">{{ detailData.insight.summary_short }}</p>
-                    <p v-if="detailData.insight.summary_detailed" style="margin: 0; line-height: 1.6; color: var(--ink)">{{ detailData.insight.summary_detailed }}</p>
-                  </div>
-
-                  <!-- Coaching -->
-                  <div v-if="detailData.insight?.coaching" class="drawer-section">
-                    <div class="drawer-section-title">Coaching</div>
-                    <div v-if="detailData.insight.coaching.did_well?.length" style="margin-bottom: 8px">
-                      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--success, #22c55e); margin-bottom: 4px">Did Well</div>
-                      <ul class="drawer-list">
-                        <li v-for="(item, i) in detailData.insight.coaching.did_well" :key="i">{{ item }}</li>
-                      </ul>
-                    </div>
-                    <div v-if="detailData.insight.coaching.needs_improvement?.length">
-                      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--danger, #ef4444); margin-bottom: 4px">Needs Improvement</div>
-                      <ul class="drawer-list">
-                        <li v-for="(item, i) in detailData.insight.coaching.needs_improvement" :key="i">{{ item }}</li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  <!-- Action Items -->
-                  <div v-if="detailData.insight?.action_items?.length" class="drawer-section">
-                    <div class="drawer-section-title">Action Items</div>
-                    <ul class="drawer-list">
-                      <li v-for="(item, i) in detailData.insight.action_items" :key="i">
-                        <template v-if="typeof item === 'string'">{{ item }}</template>
-                        <template v-else>{{ item.description || item.action || JSON.stringify(item) }}</template>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <!-- Objections -->
-                  <div v-if="detailData.insight?.objections?.length" class="drawer-section">
-                    <div class="drawer-section-title">Objections</div>
-                    <ul class="drawer-list">
-                      <li v-for="(obj, i) in detailData.insight.objections" :key="i">{{ obj }}</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <!-- RIGHT COLUMN: opportunity, risk flags, transcript -->
-                <div class="drawer-col">
-                  <!-- Opportunity Classification -->
-                  <div v-if="detailData.insight?.opportunity?.is_opportunity !== null && detailData.insight?.opportunity?.is_opportunity !== undefined" class="drawer-section">
-                    <div class="drawer-section-title">Opportunity Classification</div>
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
-                      <span
-                        class="chip"
-                        :class="detailData.insight.opportunity.is_opportunity ? 'chip--success' : 'chip--danger'"
-                        style="font-size: 12px"
-                      >{{ detailData.insight.opportunity.is_opportunity ? 'Opportunity to Sell' : 'Not an Opportunity' }}</span>
-                      <span
-                        v-if="!detailData.insight.opportunity.is_opportunity && detailData.insight.opportunity.not_opportunity_reason"
-                        class="chip chip--secondary"
-                        style="font-size: 11px"
-                      >{{ opportunityReasonLabel(detailData.insight.opportunity.not_opportunity_reason) }}</span>
-                    </div>
-                    <p
-                      v-if="detailData.insight.opportunity.detail?.reason_detail"
-                      style="margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink)"
-                    >{{ detailData.insight.opportunity.detail.reason_detail }}</p>
-                  </div>
-
-                  <!-- Risk Flags -->
-                  <div v-if="detailData.insight?.risk_flags?.length" class="drawer-section">
-                    <div class="drawer-section-title">Risk Flags</div>
-                    <ul class="drawer-list">
-                      <li v-for="(flag, i) in detailData.insight.risk_flags" :key="i">
-                        <template v-if="typeof flag === 'string'">{{ flag }}</template>
-                        <template v-else>
-                          <span v-if="flag.risk_level" :class="flag.risk_level === 'high' ? 'chip chip--danger' : flag.risk_level === 'medium' ? 'chip chip--warning' : 'chip chip--success'" style="font-size: 11px; margin-right: 6px">{{ flag.risk_level }}</span>
-                          {{ flag.description || flag.flag || JSON.stringify(flag) }}
-                        </template>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <!-- Transcript / Chat -->
-                  <div v-if="detailData.transcript" class="drawer-section">
-                    <div class="drawer-section-title">{{ isChat ? 'Chat Conversation' : 'Transcript' }}</div>
-                    <div v-if="isChat && chatMessages.length" class="chat-thread">
-                      <div
-                        v-for="msg in chatMessages"
-                        :key="msg.id"
-                        class="chat-msg"
-                        :class="msg.source === 'Agent' ? 'chat-msg--agent' : 'chat-msg--customer'"
-                      >
-                        <div class="chat-bubble" :class="msg.source === 'Agent' ? 'chat-bubble--agent' : 'chat-bubble--customer'">
-                          <div class="chat-sender">{{ msg.sender }}</div>
-                          <div class="chat-content">{{ msg.content }}</div>
-                          <div class="chat-time">{{ fmtTime(msg.timestamp) }}</div>
-                        </div>
-                      </div>
-                    </div>
-                    <pre v-else class="drawer-transcript">{{ detailData.transcript.text }}</pre>
-                  </div>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <InteractionDetailDrawer :recording-id="detailId" @close="closeDetail" />
   </div>
 </template>
 
