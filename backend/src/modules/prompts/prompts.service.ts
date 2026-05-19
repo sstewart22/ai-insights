@@ -248,8 +248,25 @@ export class PromptsService implements OnModuleInit {
 
     const campaignSection = await this.resolveCallCampaignSection(campaign);
 
+    // Optional campaign-specific Q&A pair (e.g. Parity). Both must be present
+    // to inject; one without the other would produce invalid output.
+    let campaignQaSection = '';
+    let campaignQaSchema = '';
+    if (campaign && campaign !== 'unknown') {
+      const qa = await this.getActiveByKey(`call.campaign.${campaign}.qa`);
+      const qaSchema = await this.getActiveByKey(
+        `call.campaign.${campaign}.qa_schema`,
+      );
+      if (qa && qaSchema) {
+        campaignQaSection = substitute(qa.body, { campaign });
+        campaignQaSchema = `,\n\n  ${substitute(qaSchema.body, { campaign })}`;
+      }
+    }
+
     const withSections = substitute(base.body, {
       campaign_section: campaignSection,
+      campaign_qa_section: campaignQaSection,
+      campaign_qa_schema: campaignQaSchema,
     });
 
     return substitute(withSections, {

@@ -28,6 +28,9 @@ export const ApiPath = {
   OpsChatResponseTime: "/uiapi/insights/ops/chat-response-time",
   OpsRecomputeChatResponseTime: "/uiapi/insights/ops/recompute-chat-response-time",
 
+  ParityCampaignAnalysis: "/uiapi/insights/parity/campaign-analysis",
+  ParityInteractions: "/uiapi/insights/parity/interactions",
+
   SurveyFilters: "/uiapi/survey/filters",
   SurveyOverview: "/uiapi/survey/overview",
   SurveyCategories: "/uiapi/survey/categories",

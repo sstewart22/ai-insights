@@ -2170,6 +2170,408 @@ ${prompt}
     }));
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PARITY: CAMPAIGN ANALYSIS
+  // Aggregates over interaction_insights.campaign_answers_json for the Parity
+  // campaign. Queries assume the consumer has already filtered to
+  // campaign='Parity' via the campaign param — we don't hard-code it so the
+  // same shape can be reused for future Q&A campaigns sharing the schema.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  async getParityCampaignAnalysis(
+    from: Date,
+    to: Date,
+    filterKey: InteractionFilter = 'calls',
+    campaign?: string,
+    agent?: string,
+    excludeOutcomes?: string[],
+  ) {
+    const { clause: filterClause, extraParams } = this.buildRawFilters(
+      filterKey,
+      campaign,
+      agent,
+      excludeOutcomes,
+    );
+
+    const baseWhere = `
+      WHERE ii.campaign_answers_json IS NOT NULL
+        AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0
+        AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
+        ${filterClause}`;
+
+    // Total interactions with campaign_answers data
+    const totalRows = await this.insightsRepo.manager.query<Array<{ total: string }>>(
+      `SELECT COUNT(1) AS total
+       FROM app.interaction_insights ii
+       INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+       ${baseWhere}`,
+      [from, to, ...extraParams],
+    );
+    const total = parseInt(totalRows[0]?.total ?? '0', 10);
+
+    // Single-question breakdowns (consent, decision_made, dealer_already_in_touch).
+    // Each returns rows of { answer, count } including a NULL bucket when the
+    // model couldn't extract an answer.
+    const breakdownSql = (jsonPath: string) => `
+      SELECT
+        COALESCE(JSON_VALUE(ii.campaign_answers_json, '${jsonPath}'), '__missing') AS answer,
+        COUNT(1) AS count
+      FROM app.interaction_insights ii
+      INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+      ${baseWhere}
+      GROUP BY JSON_VALUE(ii.campaign_answers_json, '${jsonPath}')`;
+
+    const [
+      consentRows,
+      decisionRows,
+      dealerTouchRows,
+      affordabilityRows,
+      lifestyleVehicleRows,
+      lifestyleFinancialRows,
+    ] = await Promise.all([
+      this.insightsRepo.manager.query<Array<{ answer: string; count: string }>>(
+        breakdownSql('$.consent_to_dealer.answer'),
+        [from, to, ...extraParams],
+      ),
+      this.insightsRepo.manager.query<Array<{ answer: string; count: string }>>(
+        breakdownSql('$.decision_made.answer'),
+        [from, to, ...extraParams],
+      ),
+      this.insightsRepo.manager.query<Array<{ answer: string; count: string }>>(
+        breakdownSql('$.dealer_already_in_touch.answer'),
+        [from, to, ...extraParams],
+      ),
+      this.insightsRepo.manager.query<Array<{ answer: string; count: string }>>(
+        breakdownSql('$.affordability_issues.answer'),
+        [from, to, ...extraParams],
+      ),
+      this.insightsRepo.manager.query<Array<{ answer: string; count: string }>>(
+        breakdownSql('$.lifestyle_change_vehicle.answer'),
+        [from, to, ...extraParams],
+      ),
+      this.insightsRepo.manager.query<Array<{ answer: string; count: string }>>(
+        breakdownSql('$.lifestyle_change_financial.answer'),
+        [from, to, ...extraParams],
+      ),
+    ]);
+
+    // Competitors cohort: every record where the customer is considering a
+    // competitor vehicle. Brand + reason breakdowns are scoped to this cohort
+    // (i.e. we don't count "no competitor" rows in the per-brand totals).
+    const competitorYesWhere = `
+      ${baseWhere}
+        AND JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.answer') = 'yes'`;
+
+    const competitorBrandRows = await this.insightsRepo.manager.query<
+      Array<{ brand: string; count: string }>
+    >(
+      `SELECT
+        JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.competitor_brand') AS brand,
+        COUNT(1) AS count
+      FROM app.interaction_insights ii
+      INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+      ${competitorYesWhere}
+        AND JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.competitor_brand') IS NOT NULL
+        AND JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.competitor_brand') <> ''
+      GROUP BY JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.competitor_brand')
+      ORDER BY COUNT(1) DESC`,
+      [from, to, ...extraParams],
+    );
+
+    // competitor_reasons.reasons is an array — need OPENJSON to unnest it.
+    const competitorReasonRows = await this.insightsRepo.manager.query<
+      Array<{ reason: string; count: string }>
+    >(
+      `SELECT reason.value AS reason, COUNT(1) AS count
+      FROM app.interaction_insights ii
+      INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+      CROSS APPLY OPENJSON(ii.campaign_answers_json, '$.competitor_reasons.reasons') AS reason
+      ${competitorYesWhere}
+      GROUP BY reason.value
+      ORDER BY COUNT(1) DESC`,
+      [from, to, ...extraParams],
+    );
+
+    const [competitorVehicleRows] = await Promise.all([
+      this.insightsRepo.manager.query<Array<{ answer: string; count: string }>>(
+        breakdownSql('$.competitor_vehicle.answer'),
+        [from, to, ...extraParams],
+      ),
+    ]);
+
+    // Customer views — per-view sentiment breakdown. Each view object has
+    // `expressed` (boolean) and `sentiment` ("positive"|"negative"|"neutral"|null).
+    // We bucket into positive / negative / neutral / not_expressed / missing.
+    const viewPaths = [
+      { key: 'brand', path: '$.view_on_brand' },
+      { key: 'current_vehicle', path: '$.view_on_current_vehicle' },
+      { key: 'dealer', path: '$.view_on_dealer' },
+      { key: 'finance_agreement', path: '$.view_on_finance_agreement' },
+    ] as const;
+
+    const viewBreakdownRows = await Promise.all(
+      viewPaths.map(({ path }) =>
+        this.insightsRepo.manager.query<
+          Array<{ sentiment: string | null; expressed: string | null; count: string }>
+        >(
+          `SELECT
+            JSON_VALUE(ii.campaign_answers_json, '${path}.sentiment') AS sentiment,
+            JSON_VALUE(ii.campaign_answers_json, '${path}.expressed') AS expressed,
+            COUNT(1) AS count
+          FROM app.interaction_insights ii
+          INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+          ${baseWhere}
+          GROUP BY
+            JSON_VALUE(ii.campaign_answers_json, '${path}.sentiment'),
+            JSON_VALUE(ii.campaign_answers_json, '${path}.expressed')`,
+          [from, to, ...extraParams],
+        ),
+      ),
+    );
+
+    const toViewBucket = (
+      rows: Array<{ sentiment: string | null; expressed: string | null; count: string }>,
+    ) => {
+      const out = {
+        positive: 0,
+        negative: 0,
+        neutral: 0,
+        not_expressed: 0,
+        missing: 0,
+      };
+      for (const r of rows) {
+        const n = parseInt(r.count, 10);
+        const exp = r.expressed;
+        const sent = r.sentiment;
+        if (exp == null && sent == null) {
+          out.missing += n;
+        } else if (exp === 'false' || (exp === 'true' && sent == null)) {
+          out.not_expressed += n;
+        } else if (sent === 'positive') {
+          out.positive += n;
+        } else if (sent === 'negative') {
+          out.negative += n;
+        } else if (sent === 'neutral') {
+          out.neutral += n;
+        } else {
+          // unexpected sentiment value — treat as missing rather than silently dropping
+          out.missing += n;
+        }
+      }
+      return out;
+    };
+
+    const views = viewPaths.reduce(
+      (acc, { key }, i) => {
+        acc[key] = toViewBucket(viewBreakdownRows[i]!);
+        return acc;
+      },
+      {} as Record<string, ReturnType<typeof toViewBucket>>,
+    );
+
+    const toBucket = (rows: Array<{ answer: string; count: string }>) => {
+      const out = { yes: 0, no: 0, n_a: 0, missing: 0 };
+      for (const r of rows) {
+        const n = parseInt(r.count, 10);
+        if (r.answer === 'yes') out.yes += n;
+        else if (r.answer === 'no') out.no += n;
+        else if (r.answer === '__missing' || r.answer == null) out.missing += n;
+        else out.n_a += n; // covers 'n/a', 'n_a', and any unexpected label
+      }
+      return out;
+    };
+
+    const competitorBreakdown = toBucket(competitorVehicleRows);
+
+    return {
+      window: { from: from.toISOString(), to: to.toISOString() },
+      filter: filterKey,
+      total,
+      consent: toBucket(consentRows),
+      decision_made: toBucket(decisionRows),
+      dealer_already_in_touch: toBucket(dealerTouchRows),
+      customer_situation: {
+        affordability_issues: toBucket(affordabilityRows),
+        lifestyle_change_vehicle: toBucket(lifestyleVehicleRows),
+        lifestyle_change_financial: toBucket(lifestyleFinancialRows),
+      },
+      views,
+      competitors: {
+        breakdown: competitorBreakdown,
+        total_with_competitor: competitorBreakdown.yes,
+        competitor_brands: competitorBrandRows.map((r) => ({
+          brand: r.brand,
+          count: parseInt(r.count, 10),
+        })),
+        competitor_reasons: competitorReasonRows.map((r) => ({
+          reason: r.reason,
+          count: parseInt(r.count, 10),
+        })),
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PARITY: DRILL-DOWN INTERACTIONS
+  // Returns interactions filtered by any combination of campaign_answers fields.
+  // Each row includes outcome + a few projected Q&A flags so the UI can show
+  // them inline without a second round-trip.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  async getParityInteractions(
+    from: Date,
+    to: Date,
+    filterKey: InteractionFilter = 'calls',
+    criteria: {
+      consentAnswer?: 'yes' | 'no' | 'n_a';
+      decisionAnswer?: 'yes' | 'no' | 'n_a';
+      dealerInTouch?: 'yes' | 'no' | 'n_a';
+      competitorBrand?: string;
+      competitorReason?: string;
+      viewKey?: 'brand' | 'current_vehicle' | 'dealer' | 'finance_agreement';
+      viewSentiment?: 'positive' | 'negative' | 'neutral' | 'not_expressed';
+      affordabilityAnswer?: 'yes' | 'no' | 'n_a';
+      lifestyleVehicleAnswer?: 'yes' | 'no' | 'n_a';
+      lifestyleFinancialAnswer?: 'yes' | 'no' | 'n_a';
+    },
+    limit = 200,
+    offset = 0,
+    campaign?: string,
+    agent?: string,
+    excludeOutcomes?: string[],
+  ) {
+    const { clause: filterClause, extraParams } = this.buildRawFilters(
+      filterKey,
+      campaign,
+      agent,
+      excludeOutcomes,
+    );
+
+    const params: unknown[] = [from, to, ...extraParams];
+    const conds: string[] = [];
+
+    // Translate the UI's "n_a" into the answer values the model actually emits.
+    // The Parity prompt emits "n/a" — but be permissive and match both forms.
+    const answerSet = (val: 'yes' | 'no' | 'n_a') =>
+      val === 'n_a' ? `('n/a', 'n_a')` : `('${val}')`;
+
+    if (criteria.consentAnswer) {
+      conds.push(
+        `JSON_VALUE(ii.campaign_answers_json, '$.consent_to_dealer.answer') IN ${answerSet(criteria.consentAnswer)}`,
+      );
+    }
+    if (criteria.decisionAnswer) {
+      conds.push(
+        `JSON_VALUE(ii.campaign_answers_json, '$.decision_made.answer') IN ${answerSet(criteria.decisionAnswer)}`,
+      );
+    }
+    if (criteria.dealerInTouch) {
+      conds.push(
+        `JSON_VALUE(ii.campaign_answers_json, '$.dealer_already_in_touch.answer') IN ${answerSet(criteria.dealerInTouch)}`,
+      );
+    }
+    if (criteria.competitorBrand) {
+      params.push(criteria.competitorBrand);
+      conds.push(
+        `JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.competitor_brand') = @${params.length - 1}`,
+      );
+    }
+    if (criteria.competitorReason) {
+      // Match any row whose competitor_reasons.reasons array contains the value.
+      params.push(criteria.competitorReason);
+      conds.push(
+        `EXISTS (
+          SELECT 1
+          FROM OPENJSON(ii.campaign_answers_json, '$.competitor_reasons.reasons') AS r
+          WHERE r.value = @${params.length - 1}
+        )`,
+      );
+    }
+
+    if (criteria.affordabilityAnswer) {
+      conds.push(
+        `JSON_VALUE(ii.campaign_answers_json, '$.affordability_issues.answer') IN ${answerSet(criteria.affordabilityAnswer)}`,
+      );
+    }
+    if (criteria.lifestyleVehicleAnswer) {
+      conds.push(
+        `JSON_VALUE(ii.campaign_answers_json, '$.lifestyle_change_vehicle.answer') IN ${answerSet(criteria.lifestyleVehicleAnswer)}`,
+      );
+    }
+    if (criteria.lifestyleFinancialAnswer) {
+      conds.push(
+        `JSON_VALUE(ii.campaign_answers_json, '$.lifestyle_change_financial.answer') IN ${answerSet(criteria.lifestyleFinancialAnswer)}`,
+      );
+    }
+
+    if (criteria.viewKey && criteria.viewSentiment) {
+      const viewPath: Record<typeof criteria.viewKey, string> = {
+        brand: '$.view_on_brand',
+        current_vehicle: '$.view_on_current_vehicle',
+        dealer: '$.view_on_dealer',
+        finance_agreement: '$.view_on_finance_agreement',
+      };
+      const path = viewPath[criteria.viewKey];
+
+      if (criteria.viewSentiment === 'not_expressed') {
+        conds.push(
+          `(JSON_VALUE(ii.campaign_answers_json, '${path}.expressed') = 'false'
+            OR (
+              JSON_VALUE(ii.campaign_answers_json, '${path}.expressed') = 'true'
+              AND JSON_VALUE(ii.campaign_answers_json, '${path}.sentiment') IS NULL
+            ))`,
+        );
+      } else {
+        conds.push(
+          `JSON_VALUE(ii.campaign_answers_json, '${path}.sentiment') = '${criteria.viewSentiment}'`,
+        );
+      }
+    }
+
+    const extraConds = conds.length ? ' AND ' + conds.join(' AND ') : '';
+
+    params.push(offset, limit);
+    const offsetIdx = params.length - 2;
+    const limitIdx = params.length - 1;
+
+    const rows = await this.insightsRepo.manager.query(
+      `SELECT
+          ii.recordingId,
+          ii.summary_short,
+          ii.overall_score,
+          ii.contact_disposition,
+          ii.sentiment_overall,
+          ia.agent,
+          ia.interactionDateTime,
+          ia.campaign,
+          ia.outcome,
+          JSON_VALUE(ii.campaign_answers_json, '$.consent_to_dealer.answer') AS consent_answer,
+          JSON_VALUE(ii.campaign_answers_json, '$.decision_made.answer') AS decision_answer,
+          JSON_VALUE(ii.campaign_answers_json, '$.dealer_already_in_touch.answer') AS dealer_touch_answer,
+          JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.competitor_brand') AS competitor_brand,
+          JSON_VALUE(ii.campaign_answers_json, '$.competitor_vehicle.competitor_model') AS competitor_model,
+          JSON_VALUE(ii.campaign_answers_json, '$.view_on_brand.sentiment') AS view_brand_sentiment,
+          JSON_VALUE(ii.campaign_answers_json, '$.view_on_current_vehicle.sentiment') AS view_vehicle_sentiment,
+          JSON_VALUE(ii.campaign_answers_json, '$.view_on_dealer.sentiment') AS view_dealer_sentiment,
+          JSON_VALUE(ii.campaign_answers_json, '$.view_on_finance_agreement.sentiment') AS view_finance_sentiment,
+          JSON_VALUE(ii.campaign_answers_json, '$.affordability_issues.answer') AS affordability_answer,
+          JSON_VALUE(ii.campaign_answers_json, '$.lifestyle_change_vehicle.answer') AS lifestyle_vehicle_answer,
+          JSON_VALUE(ii.campaign_answers_json, '$.lifestyle_change_financial.answer') AS lifestyle_financial_answer
+       FROM app.interaction_insights ii
+       INNER JOIN app.interactions ia ON ia.id = ii.recordingId
+       WHERE ii.campaign_answers_json IS NOT NULL
+         AND COALESCE(ia.interactionDateTime, ia.createdAt) >= @0
+         AND COALESCE(ia.interactionDateTime, ia.createdAt) < @1
+         ${filterClause}
+         ${extraConds}
+       ORDER BY ia.interactionDateTime DESC
+       OFFSET @${offsetIdx} ROWS FETCH NEXT @${limitIdx} ROWS ONLY`,
+      params,
+    );
+
+    return rows;
+  }
+
   async getInteractionDetail(recordingId: string) {
     const interaction = await this.recordingsRepo.findOne({ where: { id: recordingId } });
     if (!interaction) return null;
@@ -2223,6 +2625,9 @@ ${prompt}
             not_opportunity_reason: insight.not_opportunity_reason,
             detail: insight.opportunity_json ? safeParseJson(insight.opportunity_json) : null,
           },
+          campaign_answers: insight.campaign_answers_json
+            ? safeParseJson(insight.campaign_answers_json)
+            : null,
           chat_response:
             insight.chat_response_measured_count !== null ||
             insight.chat_response_metrics_json

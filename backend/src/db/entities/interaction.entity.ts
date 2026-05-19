@@ -1,4 +1,6 @@
 import {
+  BeforeInsert,
+  BeforeUpdate,
   Column,
   CreateDateColumn,
   Entity,
@@ -68,4 +70,31 @@ export class Interaction {
   // Created by sql/create-indexes.sql — do not set manually
   @Column({ type: 'datetime2', nullable: true, insert: false, update: false })
   effectiveDate!: Date | null;
+
+  // End-date of the customer's finance agreement. Imported from upstream CRM.
+  @Column({ type: 'datetime2', nullable: true })
+  maturityDate!: Date | null;
+
+  // Days between the interaction and the agreement maturity, snapshotted at
+  // the time of the interaction. Stable for trend analysis — does not move
+  // forward with the calendar. Auto-populated by the hook below when both
+  // maturityDate and interactionDateTime/createdAt are present.
+  @Column({ type: 'int', nullable: true })
+  daysToMaturityAtInteraction!: number | null;
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  private computeDaysToMaturity() {
+    if (!this.maturityDate) {
+      this.daysToMaturityAtInteraction = null;
+      return;
+    }
+    const anchor = this.interactionDateTime ?? this.createdAt ?? null;
+    if (!anchor) {
+      this.daysToMaturityAtInteraction = null;
+      return;
+    }
+    const ms = this.maturityDate.getTime() - anchor.getTime();
+    this.daysToMaturityAtInteraction = Math.floor(ms / 86_400_000);
+  }
 }

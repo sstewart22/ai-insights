@@ -352,6 +352,123 @@ export class InsightsController {
     return detail;
   }
 
+  @Get('parity/campaign-analysis')
+  async parityCampaignAnalysis(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('filterKey') filterKey?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
+    @Query('excludeOutcomes') excludeOutcomesRaw?: string,
+  ) {
+    const { fromDate, toDate } = parseDateRange(from, to);
+    const filter = normalizeInteractionFilter(filterKey);
+    return this.svcSummary.getParityCampaignAnalysis(
+      fromDate,
+      toDate,
+      filter,
+      campaign,
+      agent,
+      parseExcludeOutcomes(excludeOutcomesRaw),
+    );
+  }
+
+  @Get('parity/interactions')
+  async parityInteractions(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('filterKey') filterKey?: string,
+    @Query('consentAnswer') consentAnswer?: string,
+    @Query('decisionAnswer') decisionAnswer?: string,
+    @Query('dealerInTouch') dealerInTouch?: string,
+    @Query('competitorBrand') competitorBrand?: string,
+    @Query('competitorReason') competitorReason?: string,
+    @Query('viewKey') viewKey?: string,
+    @Query('viewSentiment') viewSentiment?: string,
+    @Query('affordabilityAnswer') affordabilityAnswer?: string,
+    @Query('lifestyleVehicleAnswer') lifestyleVehicleAnswer?: string,
+    @Query('lifestyleFinancialAnswer') lifestyleFinancialAnswer?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('campaign') campaign?: string,
+    @Query('agent') agent?: string,
+    @Query('excludeOutcomes') excludeOutcomesRaw?: string,
+  ) {
+    const { fromDate, toDate } = parseDateRange(from, to);
+    const filter = normalizeInteractionFilter(filterKey);
+
+    const normalizeAnswer = (v?: string): 'yes' | 'no' | 'n_a' | undefined => {
+      if (!v) return undefined;
+      if (v === 'yes' || v === 'no' || v === 'n_a') return v;
+      throw new BadRequestException(
+        `Answer must be one of: yes, no, n_a (got "${v}")`,
+      );
+    };
+
+    const normalizeViewKey = (v?: string):
+      | 'brand'
+      | 'current_vehicle'
+      | 'dealer'
+      | 'finance_agreement'
+      | undefined => {
+      if (!v) return undefined;
+      if (
+        v === 'brand' ||
+        v === 'current_vehicle' ||
+        v === 'dealer' ||
+        v === 'finance_agreement'
+      ) {
+        return v;
+      }
+      throw new BadRequestException(
+        `viewKey must be one of: brand, current_vehicle, dealer, finance_agreement`,
+      );
+    };
+
+    const normalizeViewSentiment = (v?: string):
+      | 'positive'
+      | 'negative'
+      | 'neutral'
+      | 'not_expressed'
+      | undefined => {
+      if (!v) return undefined;
+      if (
+        v === 'positive' ||
+        v === 'negative' ||
+        v === 'neutral' ||
+        v === 'not_expressed'
+      ) {
+        return v;
+      }
+      throw new BadRequestException(
+        `viewSentiment must be one of: positive, negative, neutral, not_expressed`,
+      );
+    };
+
+    return this.svcSummary.getParityInteractions(
+      fromDate,
+      toDate,
+      filter,
+      {
+        consentAnswer: normalizeAnswer(consentAnswer),
+        decisionAnswer: normalizeAnswer(decisionAnswer),
+        dealerInTouch: normalizeAnswer(dealerInTouch),
+        competitorBrand: competitorBrand || undefined,
+        competitorReason: competitorReason || undefined,
+        viewKey: normalizeViewKey(viewKey),
+        viewSentiment: normalizeViewSentiment(viewSentiment),
+        affordabilityAnswer: normalizeAnswer(affordabilityAnswer),
+        lifestyleVehicleAnswer: normalizeAnswer(lifestyleVehicleAnswer),
+        lifestyleFinancialAnswer: normalizeAnswer(lifestyleFinancialAnswer),
+      },
+      Math.min(parseInt(limit ?? '200', 10) || 200, 500),
+      parseInt(offset ?? '0', 10) || 0,
+      campaign,
+      agent,
+      parseExcludeOutcomes(excludeOutcomesRaw),
+    );
+  }
+
   @Get('interactions/search')
   async searchInteractions(@Query('q') q?: string) {
     return this.svcSummary.searchInteractions(q ?? '');

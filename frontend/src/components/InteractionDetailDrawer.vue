@@ -330,6 +330,124 @@
                   >{{ detailData.insight.opportunity.detail.reason_detail }}</p>
                 </div>
 
+                <!-- Campaign Q&A — Customer Position -->
+                <div v-if="campaignAnswers" class="drawer-section">
+                  <div class="drawer-section-title">Campaign Q&A — Customer Position</div>
+
+                  <!-- Headline answers: consent + decision -->
+                  <div class="parity-row parity-row--headline">
+                    <div class="parity-row-label">Consent to pass to dealer</div>
+                    <span class="chip" :class="answerChip(campaignAnswers.consent_to_dealer?.answer)" style="font-size: 11px">
+                      {{ formatAnswer(campaignAnswers.consent_to_dealer?.answer) }}
+                    </span>
+                    <div v-if="campaignAnswers.consent_to_dealer?.quote" class="parity-quote">"{{ campaignAnswers.consent_to_dealer.quote }}"</div>
+                  </div>
+
+                  <div class="parity-row">
+                    <div class="parity-row-label">Already decided</div>
+                    <span class="chip" :class="answerChip(campaignAnswers.decision_made?.answer)" style="font-size: 11px">
+                      {{ formatAnswer(campaignAnswers.decision_made?.answer) }}
+                    </span>
+                    <div v-if="campaignAnswers.decision_made?.detail" class="parity-detail">{{ campaignAnswers.decision_made.detail }}</div>
+                    <div v-if="campaignAnswers.decision_made?.quote" class="parity-quote">"{{ campaignAnswers.decision_made.quote }}"</div>
+                  </div>
+
+                  <!-- Views on current setup -->
+                  <div class="parity-subheader">Views on current setup</div>
+                  <div v-for="viewKey in viewKeys" :key="viewKey" class="parity-row">
+                    <div class="parity-row-label">{{ viewLabels[viewKey] }}</div>
+                    <span
+                      class="chip"
+                      :class="sentimentChip(campaignAnswers[viewKey])"
+                      style="font-size: 11px"
+                    >{{ sentimentLabel(campaignAnswers[viewKey]) }}</span>
+                    <div v-if="campaignAnswers[viewKey]?.expressed && campaignAnswers[viewKey]?.summary" class="parity-detail">{{ campaignAnswers[viewKey].summary }}</div>
+                    <div v-if="campaignAnswers[viewKey]?.quote" class="parity-quote">"{{ campaignAnswers[viewKey].quote }}"</div>
+                  </div>
+
+                  <!-- Constraints -->
+                  <div class="parity-subheader">Constraints &amp; circumstances</div>
+                  <div class="parity-row">
+                    <div class="parity-row-label">Affordability issues</div>
+                    <span class="chip" :class="answerChip(campaignAnswers.affordability_issues?.answer)" style="font-size: 11px">
+                      {{ formatAnswer(campaignAnswers.affordability_issues?.answer) }}
+                    </span>
+                    <div v-if="campaignAnswers.affordability_issues?.detail" class="parity-detail">{{ campaignAnswers.affordability_issues.detail }}</div>
+                    <div v-if="campaignAnswers.affordability_issues?.quote" class="parity-quote">"{{ campaignAnswers.affordability_issues.quote }}"</div>
+                  </div>
+                  <div class="parity-row">
+                    <div class="parity-row-label">Lifestyle change — vehicle</div>
+                    <span class="chip" :class="answerChip(campaignAnswers.lifestyle_change_vehicle?.answer)" style="font-size: 11px">
+                      {{ formatAnswer(campaignAnswers.lifestyle_change_vehicle?.answer) }}
+                    </span>
+                    <div v-if="campaignAnswers.lifestyle_change_vehicle?.detail" class="parity-detail">{{ campaignAnswers.lifestyle_change_vehicle.detail }}</div>
+                    <div v-if="campaignAnswers.lifestyle_change_vehicle?.quote" class="parity-quote">"{{ campaignAnswers.lifestyle_change_vehicle.quote }}"</div>
+                  </div>
+                  <div class="parity-row">
+                    <div class="parity-row-label">Lifestyle change — financial</div>
+                    <span class="chip" :class="answerChip(campaignAnswers.lifestyle_change_financial?.answer)" style="font-size: 11px">
+                      {{ formatAnswer(campaignAnswers.lifestyle_change_financial?.answer) }}
+                    </span>
+                    <div v-if="campaignAnswers.lifestyle_change_financial?.detail" class="parity-detail">{{ campaignAnswers.lifestyle_change_financial.detail }}</div>
+                    <div v-if="campaignAnswers.lifestyle_change_financial?.quote" class="parity-quote">"{{ campaignAnswers.lifestyle_change_financial.quote }}"</div>
+                  </div>
+                </div>
+
+                <!-- Campaign Q&A — Competitor & Dealer Activity -->
+                <div v-if="campaignAnswers" class="drawer-section">
+                  <div class="drawer-section-title">Campaign Q&A — Competitor &amp; Dealer Activity</div>
+
+                  <div class="parity-row">
+                    <div class="parity-row-label">Dealer already in touch</div>
+                    <span class="chip" :class="answerChip(campaignAnswers.dealer_already_in_touch?.answer)" style="font-size: 11px">
+                      {{ formatAnswer(campaignAnswers.dealer_already_in_touch?.answer) }}
+                    </span>
+                    <div v-if="campaignAnswers.dealer_already_in_touch?.quote" class="parity-quote">"{{ campaignAnswers.dealer_already_in_touch.quote }}"</div>
+                  </div>
+
+                  <div class="parity-row parity-row--headline">
+                    <div class="parity-row-label">Looking at a competitor</div>
+                    <span class="chip" :class="answerChip(campaignAnswers.competitor_vehicle?.answer)" style="font-size: 11px">
+                      {{ formatAnswer(campaignAnswers.competitor_vehicle?.answer) }}
+                    </span>
+                    <div
+                      v-if="campaignAnswers.competitor_vehicle?.competitor_brand || campaignAnswers.competitor_vehicle?.competitor_model"
+                      class="parity-detail"
+                    >
+                      <strong>{{ campaignAnswers.competitor_vehicle?.competitor_brand || '—' }}</strong>
+                      <template v-if="campaignAnswers.competitor_vehicle?.competitor_model">
+                        / {{ campaignAnswers.competitor_vehicle.competitor_model }}
+                      </template>
+                    </div>
+                    <div v-if="campaignAnswers.competitor_vehicle?.quote" class="parity-quote">"{{ campaignAnswers.competitor_vehicle.quote }}"</div>
+                  </div>
+
+                  <div v-if="campaignAnswers.competitor_reasons?.reasons?.length" class="parity-row">
+                    <div class="parity-row-label">Why competitor wins</div>
+                    <div class="parity-chip-list">
+                      <span
+                        v-for="r in campaignAnswers.competitor_reasons.reasons"
+                        :key="r"
+                        class="chip chip--info"
+                        style="font-size: 10px"
+                      >{{ String(r).replace(/_/g, ' ') }}</span>
+                    </div>
+                    <div v-if="campaignAnswers.competitor_reasons.detail" class="parity-detail">{{ campaignAnswers.competitor_reasons.detail }}</div>
+                    <div v-if="campaignAnswers.competitor_reasons.quote" class="parity-quote">"{{ campaignAnswers.competitor_reasons.quote }}"</div>
+                  </div>
+
+                  <div v-if="campaignAnswers.key_competitor_drivers?.length" class="parity-subheader">Headline competitor drivers</div>
+                  <div
+                    v-for="(d, i) in campaignAnswers.key_competitor_drivers"
+                    :key="i"
+                    class="parity-driver"
+                  >
+                    <div class="parity-driver-head">{{ d.driver }}</div>
+                    <div v-if="d.explanation" class="parity-detail">{{ d.explanation }}</div>
+                    <div v-if="d.quote" class="parity-quote">"{{ d.quote }}"</div>
+                  </div>
+                </div>
+
                 <!-- Risk Flags -->
                 <div v-if="detailData.insight?.risk_flags?.length" class="drawer-section">
                   <div class="drawer-section-title">Risk Flags</div>
@@ -529,6 +647,52 @@ const qaQuestionLabels: Record<string, string> = {
 const isChat = computed(
   () => detailData.value?.interaction?.interactionType === "chat",
 );
+
+// ─── campaign Q&A (e.g. Parity) ─────────────────────────────────────────────
+const campaignAnswers = computed<any>(
+  () => detailData.value?.insight?.campaign_answers ?? null,
+);
+
+const viewKeys = [
+  "view_on_brand",
+  "view_on_current_vehicle",
+  "view_on_dealer",
+  "view_on_finance_agreement",
+] as const;
+
+const viewLabels: Record<string, string> = {
+  view_on_brand: "Current brand",
+  view_on_current_vehicle: "Current vehicle",
+  view_on_dealer: "Current dealer",
+  view_on_finance_agreement: "Current finance agreement",
+};
+
+function answerChip(answer: string | null | undefined) {
+  if (answer === "yes") return "chip--success";
+  if (answer === "no") return "chip--danger";
+  return "chip--secondary";
+}
+
+function formatAnswer(answer: string | null | undefined) {
+  if (!answer) return "n/a";
+  if (answer === "n_a" || answer === "n/a") return "n/a";
+  return answer.charAt(0).toUpperCase() + answer.slice(1);
+}
+
+function sentimentChip(view: any) {
+  if (!view?.expressed) return "chip--secondary";
+  const s = view.sentiment;
+  if (s === "positive") return "chip--success";
+  if (s === "negative") return "chip--danger";
+  return "chip--info";
+}
+
+function sentimentLabel(view: any) {
+  if (!view?.expressed) return "Not raised";
+  const s = view.sentiment;
+  if (!s) return "Expressed";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 // ─── scoring flags (partial / low-score alerts) ─────────────────────────────
 // Ops-side and QA-side flags are kept separate so reviewers can tell at a
@@ -1219,6 +1383,82 @@ const chatMessages = computed<ChatMessage[]>(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Campaign Q&A (e.g. Parity) rows */
+.parity-subheader {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 12px 0 6px;
+}
+
+.parity-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  row-gap: 4px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.parity-row:last-child {
+  border-bottom: none;
+}
+
+.parity-row--headline {
+  background: rgba(2, 132, 199, 0.04);
+  padding-left: 8px;
+  padding-right: 8px;
+  border-radius: 4px;
+}
+
+.parity-row-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.parity-detail {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.parity-quote {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.parity-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  max-width: 60%;
+}
+
+.parity-driver {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.parity-driver:last-child {
+  border-bottom: none;
+}
+
+.parity-driver-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 2px;
 }
 
 /* Drawer transition */

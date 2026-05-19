@@ -180,6 +180,14 @@ export class InteractionInsight {
   @Column({ type: 'nvarchar', length: 'MAX', nullable: true })
   opportunity_json!: string | null;
 
+  // ── Campaign-specific Q&A (e.g. Parity) ─────────────────────────────────
+  // Structured answers to a per-campaign question set. The shape is defined
+  // by the campaign's prompt fragment (call.campaign.<name>.qa_schema), so
+  // this column is intentionally schemaless from the database's point of view.
+
+  @Column({ type: 'nvarchar', length: 'MAX', nullable: true })
+  campaign_answers_json!: string | null;
+
   // ── Shared JSON fields ───────────────────────────────────────────────────
 
   @Column({ type: 'nvarchar', length: 'MAX', nullable: true })

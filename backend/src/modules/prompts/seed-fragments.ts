@@ -38,7 +38,7 @@ If contact_disposition ≠ connected_correct_party:
 conversation_type: lead_generation | sales_follow_up | satisfaction_check | complaint_handling | service_query | other | unknown
 
 {{campaign_section}}
-
+{{campaign_qa_section}}
 ═══════════════════════════════════════
 SECTION 3 — OPERATIONS SCORING (calls only)
 ═══════════════════════════════════════
@@ -166,7 +166,7 @@ JSON SCHEMA
     "competitor_intelligence": [
       { "brand": string, "context": string, "sentiment": "positive" | "negative" | "neutral" }
     ]
-  },
+  }{{campaign_qa_schema}},
 
   "action_items": [
     { "description": string, "owner": "agent" | "customer" | "dealer" | "unknown", "due_date_if_mentioned": string | null }
@@ -192,6 +192,8 @@ Quality rules:
 - overall_score = mean of non-null dimension scores, rounded to 1 decimal place.
 - action_items must be concrete. If none, [].
 - risk_flags: flag vulnerable customer language, complaints, compliance gaps, or DPA failures.
+- If a campaign-specific schema extension appears above (e.g. "campaign_answers"),
+  include it in your output as a top-level field. Omit it entirely if none was provided.
 
 Transcript:
 """{{transcript}}"""
@@ -279,6 +281,146 @@ const CALL_CAMPAIGN_FPI = buildKnownCallCampaign(
   'fpi_confirmed_with_customer_agreement — was future purchase intention confirmed with customer agreement?',
   true,
 );
+
+// ─── CALL: PARITY CAMPAIGN ───────────────────────────────────────────────────
+// Equity-Parity Finance Agreement review. Customers identified as being in a
+// position to upgrade their vehicle for a comparable monthly payment are
+// invited to a dealer review. Goal of the call is to qualify the customer
+// and (ideally) get consent to pass details to the dealer.
+
+const CALL_CAMPAIGN_PARITY = `═══════════════════════════════════════
+SECTION 2 — CAMPAIGN: PARITY (Equity-Parity Finance Agreement Review)
+═══════════════════════════════════════
+Campaign: Parity (provided — do not detect, set campaign_detected to "Parity")
+
+About the campaign:
+  This is an OUTBOUND campaign targeting customers whose existing finance
+  agreement has been identified as a candidate for vehicle upgrade at a
+  COMPARABLE monthly payment. The purpose of the call is to invite the
+  customer to a review with their dealer.
+
+  The customer's CURRENT vehicle, brand, dealer and finance agreement are
+  all relevant — the agent's job is to qualify whether the customer is open
+  to a review, and (if so) to capture consent to pass details to the dealer.
+
+Compliance check for Parity:
+  No campaign-specific compliance script applies — set all fields in
+  campaign_compliance (itc_statement_read, dpa_3_elements_verified,
+  four_options_explained, lost_sale_identified, six_month_callback_advised,
+  fpi_confirmed_with_customer_agreement, contacted_by_dealership) to null,
+  EXCEPT contacted_by_dealership which MAY be set from the customer's own
+  answer when explicitly stated (matches campaign Q&A item dealer_already_in_touch).
+
+For gdpr dimension: set to null (not applicable for Parity).`;
+
+const CALL_CAMPAIGN_PARITY_QA = `═══════════════════════════════════════
+SECTION 2B — CAMPAIGN Q&A (PARITY)
+═══════════════════════════════════════
+Extract the CUSTOMER's position on each item below from the transcript only.
+Listen for what the customer actually says — not what the agent claims on
+their behalf. If a topic is never raised, answer "n/a".
+
+For every item, return an object matching the campaign_answers schema below.
+Every "quote" field MUST be a verbatim, ≤12-word excerpt from the customer's
+speech that justifies the answer. If no quote is available, set quote to "".
+
+Q&A items:
+
+1. consent_to_dealer
+   Did the customer AGREE to having their details passed on to the dealer?
+   answer: "yes" | "no" | "n/a"
+
+2. view_on_brand
+   Did the customer express a view on their CURRENT brand?
+   expressed: boolean
+   sentiment: "positive" | "negative" | "neutral" | null  (null if not expressed)
+   summary: ≤30 words capturing the view (or "" if not expressed)
+
+3. view_on_current_vehicle
+   Did the customer express a view on their CURRENT vehicle?
+   expressed / sentiment / summary as above.
+
+4. view_on_dealer
+   Did the customer express a view on their CURRENT dealer?
+   expressed / sentiment / summary as above.
+
+5. view_on_finance_agreement
+   Did the customer express a view on their CURRENT finance agreement?
+   expressed / sentiment / summary as above.
+
+6. decision_made
+   Has the customer ALREADY decided what they are going to do (keep, hand
+   back, change brand, buy outright, go elsewhere)?
+   answer: "yes" | "no" | "n/a"
+   detail: ≤30 words on what they have decided (or "")
+
+7. affordability_issues
+   Does the customer have AFFORDABILITY issues that affect their decision?
+   answer: "yes" | "no" | "n/a"
+   detail: ≤30 words.
+
+8. lifestyle_change_vehicle
+   Have there been LIFESTYLE changes that affect their VEHICLE decision
+   (e.g. growing family, retirement, new commute, work-from-home, mobility)?
+   answer: "yes" | "no" | "n/a"
+   detail: ≤30 words.
+
+9. lifestyle_change_financial
+   Have there been LIFESTYLE changes that affect their FINANCIAL position
+   (e.g. job change, income change, redundancy, new dependants, retirement)?
+   answer: "yes" | "no" | "n/a"
+   detail: ≤30 words.
+
+10. dealer_already_in_touch
+    Has the DEALER already been in touch with this customer about the
+    agreement / upgrade ahead of this call?
+    answer: "yes" | "no" | "n/a"
+    quote required if "yes".
+
+11. competitor_vehicle
+    Is the customer considering / going with a COMPETITOR vehicle?
+    answer: "yes" | "no" | "n/a"
+    competitor_brand: <brand name> | null
+    competitor_model: <model name> | null
+
+12. competitor_reasons
+    If the customer is looking at a competitor (Q11 = "yes"), WHY are they
+    more interested in the competitor's product compared with this client's
+    brand and vehicles? This is the headline insight for this campaign.
+    reasons: a list drawn from
+      ["price", "monthly_payment", "spec", "ev_or_hybrid", "incentives",
+       "range_or_efficiency", "feature", "reliability", "brand_preference",
+       "dealer_experience", "timing", "availability", "other"]
+    detail: ≤50 words synthesising the reasoning in the customer's own terms.
+
+Also produce a SHORT, RANKED list of headline competitor drivers across the call:
+
+  key_competitor_drivers: array of objects (max 5), each:
+    {
+      "driver": <short label, e.g. "Higher monthly cost">,
+      "explanation": <≤30 words: why this drove the customer>,
+      "quote": <≤12 word verbatim customer quote>
+    }
+
+If the customer is NOT considering a competitor, set key_competitor_drivers = [].`;
+
+const CALL_CAMPAIGN_PARITY_QA_SCHEMA = `"campaign_answers": {
+    "consent_to_dealer":          { "answer": string, "quote": string },
+    "view_on_brand":              { "expressed": boolean, "sentiment": string | null, "summary": string, "quote": string },
+    "view_on_current_vehicle":    { "expressed": boolean, "sentiment": string | null, "summary": string, "quote": string },
+    "view_on_dealer":             { "expressed": boolean, "sentiment": string | null, "summary": string, "quote": string },
+    "view_on_finance_agreement":  { "expressed": boolean, "sentiment": string | null, "summary": string, "quote": string },
+    "decision_made":              { "answer": string, "detail": string, "quote": string },
+    "affordability_issues":       { "answer": string, "detail": string, "quote": string },
+    "lifestyle_change_vehicle":   { "answer": string, "detail": string, "quote": string },
+    "lifestyle_change_financial": { "answer": string, "detail": string, "quote": string },
+    "dealer_already_in_touch":    { "answer": string, "quote": string },
+    "competitor_vehicle":         { "answer": string, "competitor_brand": string | null, "competitor_model": string | null, "quote": string },
+    "competitor_reasons":         { "reasons": string[], "detail": string, "quote": string },
+    "key_competitor_drivers": [
+      { "driver": string, "explanation": string, "quote": string }
+    ]
+  }`;
 
 // ─── CHAT BASE ───────────────────────────────────────────────────────────────
 
@@ -1172,7 +1314,7 @@ export const SEED_FRAGMENTS: SeedFragment[] = [
     campaign: null,
     label: 'Call — base template',
     notes:
-      'Placeholders: {{campaign_section}}, {{transcript}}. Composer injects the campaign section fragment by campaign name.',
+      'Placeholders: {{campaign_section}}, {{campaign_qa_section}}, {{campaign_qa_schema}}, {{transcript}}. Composer injects the campaign section by campaign name; the qa_section / qa_schema slots are populated only for campaigns that ship a call.campaign.<name>.qa and .qa_schema fragment (e.g. Parity).',
     body: CALL_BASE,
   },
   {
@@ -1238,6 +1380,36 @@ export const SEED_FRAGMENTS: SeedFragment[] = [
     label: 'Call — FPI campaign section',
     notes: null,
     body: CALL_CAMPAIGN_FPI,
+  },
+  {
+    key: 'call.campaign.Parity',
+    interactionType: 'call',
+    kind: 'campaign_section',
+    campaign: 'Parity',
+    label: 'Call — Parity campaign section',
+    notes:
+      'Equity-Parity Finance Agreement review campaign. No compliance script; the headline output is the campaign Q&A (see call.campaign.Parity.qa).',
+    body: CALL_CAMPAIGN_PARITY,
+  },
+  {
+    key: 'call.campaign.Parity.qa',
+    interactionType: 'call',
+    kind: 'qa_section',
+    campaign: 'Parity',
+    label: 'Call — Parity campaign Q&A',
+    notes:
+      'Question set extracted into the campaign_answers blob. Composer injects this into the {{campaign_qa_section}} slot of call.base.',
+    body: CALL_CAMPAIGN_PARITY_QA,
+  },
+  {
+    key: 'call.campaign.Parity.qa_schema',
+    interactionType: 'call',
+    kind: 'qa_schema',
+    campaign: 'Parity',
+    label: 'Call — Parity campaign Q&A schema',
+    notes:
+      'JSON schema fragment for the campaign_answers field. Composer prefixes ",\\n\\n  " when injecting into the {{campaign_qa_schema}} slot of call.base.',
+    body: CALL_CAMPAIGN_PARITY_QA_SCHEMA,
   },
   {
     key: 'chat.base',

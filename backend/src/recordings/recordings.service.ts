@@ -435,6 +435,11 @@ export class RecordingsService {
           ? JSON.stringify(parsed.objection_assessment)
           : null,
 
+        // Campaign-specific Q&A blob (e.g. Parity campaign_answers)
+        campaign_answers_json: parsed.campaign_answers
+          ? JSON.stringify(parsed.campaign_answers)
+          : null,
+
         // Chat agent response-time metrics (chats only; null for calls)
         chat_response_avg_seconds: chatResponseAgg.avgSeconds,
         chat_response_longest_seconds: chatResponseAgg.longestSeconds,

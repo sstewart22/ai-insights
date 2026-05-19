@@ -54,3 +54,19 @@ Updates
   of the login screen. Bump this every session that ships changes (SemVer:
   MAJOR breaking, MINOR feature, PATCH fix). Now at 1.1.0.
 
+2026-05-17
+- Parity (equity-parity finance review) campaign — phase 1 backend. New columns
+  app.interactions.maturityDate + daysToMaturityAtInteraction (auto-computed by
+  a @BeforeInsert/@BeforeUpdate hook on Interaction) and
+  app.interaction_insights.campaign_answers_json. Migration:
+  backend/sql/add-parity-campaign.sql (also DELETEs the seeded call.base row
+  so it reseeds with new {{campaign_qa_section}} / {{campaign_qa_schema}}
+  placeholders).
+- Three new prompt fragments — call.campaign.Parity, call.campaign.Parity.qa,
+  call.campaign.Parity.qa_schema — extracting a 12-item Q&A + ranked
+  key_competitor_drivers into campaign_answers_json. composeCallPrompt now
+  pairs any campaign's .qa + .qa_schema fragments generically.
+- Phase 2 dashboard spec parked at prompts/parity campaign phase 2 - dashboard.txt
+  (Client Services widgets, maturity-bucket analytics, four new /uiapi/insights/parity/*
+  endpoints). APP_VERSION → 1.3.0.
+

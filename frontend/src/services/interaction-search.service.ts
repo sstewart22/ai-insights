@@ -38,6 +38,9 @@ export interface InteractionDetail {
     campaign_detected: string | null;
     decision_timeline: string | null;
     next_step_agreed: string | null;
+    // Campaign-specific Q&A blob (e.g. Parity). Shape varies per campaign,
+    // owned by the matching call.campaign.<NAME>.qa_schema prompt fragment.
+    campaign_answers?: Record<string, any> | null;
   } | null;
 }
 

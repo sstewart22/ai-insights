@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createProvider } from './providers/provider.factory';
 import { PromptsService } from '../modules/prompts/prompts.service';
 import { InsightsProviderName } from './types/insights-provider.type';
@@ -134,6 +134,7 @@ export type ExtractedInsights = {
   };
   qa_assessment?: any;                  // campaign-specific QA scoring (e.g. RAC Q1-Q15)
   objection_assessment?: ObjectionAssessment; // campaign-specific objection handling
+  campaign_answers?: Record<string, any>;     // campaign-specific Q&A blob (e.g. Parity)
   client_services: ClientServices;
   action_items: ActionItem[];
   key_entities: Array<{ type: string; value: string }>;
@@ -152,6 +153,8 @@ export function cleanJsonText(text: string): string {
 
 @Injectable()
 export class InsightsService {
+  private readonly logger = new Logger(InsightsService.name);
+
   constructor(private readonly promptsService: PromptsService) {}
 
   async extractInsights(
@@ -182,13 +185,11 @@ export class InsightsService {
     try {
       parsed = JSON.parse(cleanedJsonText);
     } catch {
-      console.error('[extractInsights] invalid JSON from model', {
-        providerUsed: result.provider,
-        model: result.model,
-        interactionType,
-        campaign,
-        rawPreview: rawJsonText.slice(0, 4000),
-      });
+      this.logger.error(
+        `Invalid JSON from ${result.provider}/${result.model} ` +
+          `(interactionType=${interactionType}, campaign=${campaign ?? 'none'}) ` +
+          `— raw preview:\n${rawJsonText.slice(0, 4000)}`,
+      );
       throw new BadRequestException('Insights model did not return valid JSON');
     }
 
